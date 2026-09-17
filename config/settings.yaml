@@ -1,0 +1,14 @@
+providers:
+  crossref: true
+  openalex: true
+  semantic_scholar: true
+cache:
+  enabled: true
+  ttl_days: 30
+ranking:
+  field_impact: 0.30
+  local_network: 0.25
+  semantic_relevance: 0.25
+  influential_citations: 0.10
+  author_impact: 0.06
+  source_impact: 0.04

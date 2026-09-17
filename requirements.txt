@@ -1,0 +1,11 @@
+streamlit>=1.42,<2
+requests>=2.32,<3
+pandas>=2.2,<3
+numpy>=2.0,<3
+networkx>=3.4,<4
+scipy>=1.14,<2
+PyYAML>=6.0,<7
+python-dotenv>=1.0,<2
+rapidfuzz>=3.10,<4
+tenacity>=9.0,<10
+pytest>=8.3,<9

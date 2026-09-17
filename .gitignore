@@ -1,0 +1,10 @@
+.env
+.venv/
+local-only/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+data/*.db
+data/sjr/*.csv
+logs/*.log
+logs/*.pid
