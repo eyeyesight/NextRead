@@ -165,11 +165,11 @@ Semantic Scholar 的 paper-level `influentialCitationCount` 描述 reference 在
 
 系統取得一篇文章所有可用作者的 h-index，計算 raw median 與 raw maximum，再分別在目前 reference set 中標準化。
 
-$$
-AuthorScore =
-0.6097 \times MedianH_{norm}
-+ 0.3903 \times MaxH_{norm}
-$$
+```math
+\mathrm{AuthorScore}
+= 0.6097 \times \mathrm{MedianH}_{\mathrm{norm}}
++ 0.3903 \times \mathrm{MaxH}_{\mathrm{norm}}
+```
 
 Jinadu et al. (2026) 發表的 author authority weights 為 median h-index `0.2918` 與 maximum h-index `0.1868`，只在這兩個 author signals 內重新正規化後，得到本專案使用的 `0.6097 / 0.3903`。
 
