@@ -8,6 +8,8 @@ Reading Priority 回答一個具體問題：
 
 分數代表同一次分析中的相對閱讀優先度，不代表跨領域或跨清單通用的學術品質。
 
+[查看實際操作導覽與完整分析畫面](DEMO.md)
+
 ## 功能
 
 - 使用 GROBID 擷取 seed paper 與完整 reference list
