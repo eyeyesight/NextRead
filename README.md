@@ -289,13 +289,13 @@ Bibliometric composite indicators 對權重、相關指標與 normalization 方�
 
 ## References
 
-- Jinadu, U. et al. (2026). [Authority Bias in Conversational Search Engines for Academic Paper Recommendation](https://arxiv.org/html/2609.00248).
-- Zhang, Y. et al. (2019). [Ranking scientific articles based on bibliometric networks with a weighting scheme](https://doi.org/10.1016/j.joi.2019.03.013).
-- Zhang, Y. et al. (2020). [Towards Expert Preference on Academic Article Recommendation Using Bibliometric Networks](https://doi.org/10.1007/978-3-030-60470-7_2).
-- Hagen, N. T. (2010). [Harmonic publication and citation counting](https://doi.org/10.1007/s11192-009-0129-4).
-- Forthmann, B., Doebler, P., & Mutz, R. (2024). [Why summing up bibliometric indicators does not justify a composite indicator](https://doi.org/10.1007/s11192-024-05194-x).
-- [Semantic Scholar Academic Graph API](https://api.semanticscholar.org/api-docs/).
-- [OpenAlex citation documentation](https://help.openalex.org/data/works/citations/).
+- Forthmann, B., Doebler, P., & Mutz, R. (2024). Why summing up bibliometric indicators does not justify a composite indicator. *Scientometrics, 129*(12), 7475–7499. https://doi.org/10.1007/s11192-024-05194-x
+- Hagen, N. T. (2010). Harmonic publication and citation counting: Sharing authorship credit equitably—not equally, geometrically or arithmetically. *Scientometrics, 84*(3), 785–793. https://doi.org/10.1007/s11192-009-0129-4
+- Jinadu, U., Ghazvinian, P., Budathoki, A., Ampel, B. M., Sunderraman, R., & Ding, Y. (2026). *Authority bias in conversational search engines for academic paper recommendation* [Preprint]. arXiv. https://arxiv.org/abs/2609.00248
+- OpenAlex. (2026, August 8). *Citations*. https://help.openalex.org/data/works/citations/
+- Semantic Scholar. (n.d.). *Academic Graph API*. Retrieved September 18, 2026, from https://api.semanticscholar.org/api-docs/
+- Zhang, Y., Wang, M., Gottwalt, F., Saberi, M., & Chang, E. (2019). Ranking scientific articles based on bibliometric networks with a weighting scheme. *Journal of Informetrics, 13*(2), 616–634. https://doi.org/10.1016/j.joi.2019.03.013
+- Zhang, Y., Wang, M., Saberi, M., & Chang, E. (2020). Towards expert preference on academic article recommendation using bibliometric networks. In W. Lu & K. Q. Zhu (Eds.), *Trends and applications in knowledge discovery and data mining* (pp. 11–19). Springer. https://doi.org/10.1007/978-3-030-60470-7_2
 
 ## License
 
