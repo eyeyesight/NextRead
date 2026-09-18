@@ -1,5 +1,7 @@
 # NextRead
 
+**[操作 Demo](DEMO.md)** · **[安裝與啟動](#windows-安裝與啟動)** · **[計分方式](#scoring-methodology)**
+
 NextRead 是一套本機 Streamlit 工具，系統從一份學術 PDF 擷取 references、補充書目與學術指標、建立局部引用網路，並產生建議閱讀順序。
 
 Reading Priority 回答一個具體問題：
@@ -7,8 +9,6 @@ Reading Priority 回答一個具體問題：
 > 在目前這篇論文引用的文獻中，接下來應該先讀哪一篇？
 
 分數代表同一次分析中的相對閱讀優先度，不代表跨領域或跨清單通用的學術品質。
-
-[查看實際操作導覽與完整分析畫面](DEMO.md)
 
 ## 功能
 
