@@ -23,7 +23,7 @@ def test_check_never_starts_docker_when_engine_is_off(tmp_path, monkeypatch):
         return subprocess.CompletedProcess(command, 1, "", "")
 
     monkeypatch.setattr("parsers.grobid_service.subprocess.run", run)
-    with pytest.raises(GrobidUnavailableError, match="手動開啟 Docker Desktop"):
+    with pytest.raises(GrobidUnavailableError, match="開啟 Docker Desktop"):
         check_grobid_ready(client, tmp_path)
     assert calls == [["docker", "info"]]
 
@@ -105,7 +105,7 @@ def test_running_container_without_healthy_api_is_not_ready(tmp_path, monkeypatc
 def test_missing_docker_is_actionable(tmp_path, monkeypatch):
     client = GrobidClient("http://localhost:8070")
     monkeypatch.setattr("parsers.grobid_service.find_docker", lambda: None)
-    with pytest.raises(GrobidUnavailableError, match="手動啟動 Docker Desktop"):
+    with pytest.raises(GrobidUnavailableError, match="開啟 Docker Desktop"):
         check_grobid_ready(client, tmp_path)
 
 

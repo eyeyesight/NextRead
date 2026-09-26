@@ -36,7 +36,7 @@ function Test-HttpEndpoint {
 }
 
 function Stop-ExistingStreamlit {
-    Write-LauncherStatus "正在重新啟動分析介面..."
+    Write-LauncherStatus "正在重新啟動 NextRead..."
     $processIds = @()
 
     if (Test-Path -LiteralPath $streamlitPidPath) {
@@ -61,7 +61,7 @@ function Stop-ExistingStreamlit {
         }
         Start-Sleep -Milliseconds 250
     }
-    throw "舊的分析介面仍占用 $appUrl。請關閉占用 8501 連接埠的程式後再試一次。"
+    throw "無法使用 $appUrl。請先關閉占用 8501 連接埠的程式，再試一次。"
 }
 
 try {
@@ -90,11 +90,11 @@ try {
         }
     }
     if (-not $appReady) {
-        throw "分析介面未能在 45 秒內啟動。請查看 logs 資料夾中的啟動紀錄。"
+        throw "NextRead 未能在 45 秒內啟動。請查看 logs 資料夾中的啟動紀錄。"
     }
 
     if ($NoBrowser) {
-        Write-LauncherStatus "啟動檢查完成。" Green
+        Write-LauncherStatus "NextRead 已啟動。" Green
     }
     else {
         Write-LauncherStatus "啟動完成，正在開啟瀏覽器。" Green

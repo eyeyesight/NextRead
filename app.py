@@ -45,9 +45,9 @@ MODES = {
     "complete": {"crossref": True, "openalex": True, "semantic_scholar": True},
 }
 MODE_TEXT = {
-    "parser": (("僅解析", "Parse only"), ("只擷取參考文獻，不查外部指標。", "Extract references without external metrics.")),
-    "standard": (("標準分析（推薦）", "Standard (recommended)"), ("使用 Crossref、OpenAlex、SJR 與局部引用網路。", "Use Crossref, OpenAlex, SJR, and the local citation graph.")),
-    "complete": (("完整分析", "Complete analysis"), ("另加入 Semantic Scholar 語意相似度與具影響力引用關係。", "Also add Semantic Scholar similarity and influential citation relationships.")),
+    "parser": (("僅解析", "Parse only"), ("只取得參考文獻，不查詢外部指標。", "Extract references without external metrics.")),
+    "standard": (("標準分析（推薦）", "Standard (recommended)"), ("加入 Crossref、OpenAlex、SJR 和清單內的引用關係。", "Use Crossref, OpenAlex, SJR, and the local citation graph.")),
+    "complete": (("完整分析", "Complete analysis"), ("再加入 Semantic Scholar 的語意相似度與具影響力引用關係。", "Also add Semantic Scholar similarity and influential citation relationships.")),
 }
 language_choice = st.session_state.get("language_selector", "繁體中文")
 language = "zh-TW" if language_choice == "繁體中文" else "en"
@@ -332,7 +332,7 @@ def sjr_quality_chart(papers: list[ReferencePaper]) -> None:
         st.info(t("目前沒有可用的 SJR 資料。", "No SJR data is currently available."))
         return
     st.caption(t(
-        "長條長度代表原始 SJR Score，顏色代表 SCImago 官方 Best Quartile。Q1–Q4 是各期刊所屬學科的分區，因此圖中不使用共用切截線。",
+        "長條顯示原始 SJR Score，顏色顯示 SCImago 官方的 Best Quartile。Q1–Q4 依期刊所屬學科劃分，圖中因此沒有共用的分區界線。",
         "Bar length shows the raw SJR Score. Color shows the official SCImago Best Quartile. Q1–Q4 are category-specific, so no shared cutoff lines are used.",
     ))
     quartile_domain = ["Q1", "Q2", "Q3", "Q4", t("無資料", "No data")]
@@ -370,11 +370,11 @@ def sjr_quality_chart(papers: list[ReferencePaper]) -> None:
 def performance_charts(papers: list[ReferencePaper]) -> None:
     st.header(t("各項指標的文獻表現", "Performance across all references"))
     st.caption(t(
-        "除期刊品質直接顯示原始 SJR Score 外，其餘圖表的橫軸都是同份清單內的相對位置。100 代表該項指標最高，50 約為中間位置。缺少資料不會被當成 0。將游標移到長條上可查看原始數值與書目資訊。",
+        "期刊品質顯示原始 SJR Score；其他圖表的橫軸顯示這份清單內的相對位置。100 是該項指標的最高值，50 約為中間位置。缺少資料不會記為 0。將游標移到長條上，可查看原始數值與書目資料。",
         "Journal Quality shows raw SJR Scores. All other charts use relative position within this reference list, where 100 is the highest and 50 is around the middle. Missing data is not treated as zero. Hover over a bar for raw values and bibliographic details.",
     ))
     st.caption(t(
-        "建議由左至右判讀，先確認文獻在研究脈絡中的位置，再評估引用、期刊與學術資歷。",
+        "可由左至右閱讀：先看文獻與研究主題的關係，再看引用、期刊和作者指標。",
         "Read from left to right. Start with the paper's position in the research context, then assess citations, journal quality, and academic track record.",
     ))
     specs = criteria_specs()
@@ -481,10 +481,10 @@ def paper_detail(p: ReferencePaper, peers: list[ReferencePaper]) -> None:
     priority_values = [peer.priority_score for peer in peers if peer.priority_score is not None]
     priority_top_quartile = float(pd.Series(priority_values).quantile(0.75)) if priority_values else None
     if p.sjr_quartile == "Q1" and p.priority_score is not None and priority_top_quartile is not None and p.priority_score >= priority_top_quartile:
-        st.success(t("建議優先閱讀。這篇文章刊登於 SJR Q1 期刊，閱讀優先度也進入本清單前 25%。", "Recommended for priority reading. It appears in an SJR Q1 journal and its Reading Priority is in the top 25% of this list."))
+        st.success(t("這篇文章刊登於 SJR Q1 期刊，閱讀優先度也位居本清單前 25%，可考慮優先閱讀。", "Recommended for priority reading. It appears in an SJR Q1 journal and its Reading Priority is in the top 25% of this list."))
 
     st.markdown(f"### {t('目前文章在各項分布中的位置', 'Current paper within each distribution')}")
-    st.caption(t("盒鬚圖呈現所有文獻的分布。盒內線是中位數，兩端是最小值與最大值，暖色菱形代表目前文章。每個指標使用自己的原始尺度。", "Each box plot shows all references. The center line is the median, whiskers show the minimum and maximum, and the warm-colored diamond marks the current paper. Each metric keeps its original scale."))
+    st.caption(t("盒鬚圖顯示清單中所有文獻的分布：盒內線是中位數，兩端是最小值與最大值，暖色菱形是目前這篇文章。各指標保留原始尺度。", "Each box plot shows all references. The center line is the median, whiskers show the minimum and maximum, and the warm-colored diamond marks the current paper. Each metric keeps its original scale."))
     for criterion, metrics in criteria_specs():
         st.markdown(f"**{criterion}**")
         columns = st.columns(len(metrics))
@@ -538,18 +538,18 @@ with actions:
 language = "zh-TW" if language_choice == "繁體中文" else "en"
 with head:
     st.title("NextRead")
-st.write(t("輸入論文 DOI 或標題即可快速推薦；也可上傳 PDF 抽取或比對參考文獻。", "Enter a paper DOI or title for fast recommendations; optionally upload a PDF to extract or compare references."))
+st.write(t("輸入論文 DOI 或標題，即可取得閱讀建議。也可以上傳 PDF，抽取或比對參考文獻。", "Enter a paper DOI or title for fast recommendations; optionally upload a PDF to extract or compare references."))
 st.info(t(
-    "Reading Priority 決定本次參考文獻清單的閱讀順序，可搭配 SJR Quartile 快速查看期刊在所屬學科中的位置，再查閱 Local PageRank、Semantic Similarity、FWCI 等指標參考一篇文獻為何值得優先閱讀。",
+    "Reading Priority 排出這份參考文獻清單的閱讀順序。你可以先看 SJR Quartile，了解期刊在所屬學科的分區，再用 Local PageRank、Semantic Similarity、FWCI 等指標判斷推薦原因。",
     "Reading Priority determines the reading order for this reference list. Use SJR Quartile to quickly see a journal's standing within its subject category, then consult Local PageRank, Semantic Similarity, FWCI, and other metrics to understand why a paper may deserve priority.",
 ))
 if pipeline.sjr.available:
     st.success(t(
-        f"目前使用 SJR {pipeline.sjr.year or '年份未知'} 資料。需要更新時，請使用「進階設定 → 手動更新 SJR 資料」。",
+        f"目前使用 SJR {pipeline.sjr.year or '年份未知'} 資料。如要更新，請到「進階設定 → 手動更新 SJR 資料」。",
         f"Currently using SJR {pipeline.sjr.year or 'year unknown'} data. To update it, use Advanced settings → Manually update SJR data.",
     ))
 else:
-    st.warning(t("尚未安裝 SJR 資料。請展開「進階設定」，依照「手動更新 SJR 資料」的三個步驟完成安裝。", "SJR data is not installed. Open Advanced settings and follow the three steps under Manually update SJR data."))
+    st.warning(t("尚未安裝 SJR 資料。請到「進階設定 → 手動更新 SJR 資料」，依照畫面上的步驟安裝。", "SJR data is not installed. Open Advanced settings and follow the three steps under Manually update SJR data."))
 update_message = st.session_state.pop("sjr_update_message", None)
 if update_message:
     st.success(update_message)
@@ -565,11 +565,11 @@ grobid_status_note = None
 with st.expander(t("進階設定", "Advanced settings")):
     use_grobid = st.checkbox(t("使用 GROBID 解析 PDF", "Use GROBID to parse PDF"), value=False)
     st.caption(t(
-        "GROBID 是選用功能：不用 Docker 也能快速推薦；若想從 PDF 盡量擷取與原文相符的完整參考文獻，建議使用 GROBID。抽取結果仍需核對原文。",
+        "GROBID 是選用功能。不裝 Docker 也能取得閱讀建議；若希望從 PDF 盡量擷取完整的參考文獻清單，建議使用 GROBID。抽取結果仍需與原文核對。",
         "GROBID is optional: fast recommendations work without Docker. For the most complete PDF-derived reference list, we recommend GROBID. Verify extracted references against the paper.",
     ))
     if use_grobid:
-        st.caption(t("請先自行啟動 Docker Desktop，再於專案資料夾執行 `docker compose up -d grobid`。NextRead 只檢查服務，不會替你啟動。", "Start Docker Desktop yourself, then run `docker compose up -d grobid` in the project folder. NextRead checks the service but does not start it."))
+        st.caption(t("請先開啟 Docker Desktop，再到專案資料夾執行 `docker compose up -d grobid`。NextRead 只檢查服務是否就緒，不會自動啟動。", "Start Docker Desktop yourself, then run `docker compose up -d grobid` in the project folder. NextRead checks the service but does not start it."))
         if not st.session_state.get("grobid_check_done"):
             st.session_state["grobid_check_done"] = True
             rechecking = st.session_state.pop("grobid_recheck_requested", False)
@@ -579,7 +579,7 @@ with st.expander(t("進階設定", "Advanced settings")):
                         progress_line = status.empty()
                         def report_retry(attempt: int) -> None:
                             progress_line.write(t(
-                                f"容器已啟動；API 尚未回應，正在等待後重試（{attempt}/5）。",
+                                f"容器已啟動，API 尚未回應。稍後重試（{attempt}/5）。",
                                 f"Container is running; waiting for its API before retrying ({attempt}/5).",
                             ))
                         try:
@@ -605,12 +605,12 @@ with st.expander(t("進階設定", "Advanced settings")):
         st.session_state.pop("grobid_check_error", None)
         st.session_state.pop("grobid_recheck_requested", None)
     crossref = st.checkbox(t("Crossref 逐筆書目辨識", "Crossref per-reference lookup"), value=defaults["crossref"])
-    st.caption(t("DOI／標題入口始終使用 Crossref 查找原始論文與出版者提交清單；此選項只控制後續逐筆補充。", "The DOI/title entry always uses Crossref for the source paper and publisher-deposited list; this option controls subsequent per-reference lookup only."))
+    st.caption(t("輸入 DOI 或標題時，一律使用 Crossref 查找論文及出版者提交的參考文獻清單。這個選項只控制後續是否逐筆查詢。", "The DOI/title entry always uses Crossref for the source paper and publisher-deposited list; this option controls subsequent per-reference lookup only."))
     openalex = st.checkbox("OpenAlex", value=defaults["openalex"])
     semantic_scholar = st.checkbox("Semantic Scholar", value=defaults["semantic_scholar"])
     force_refresh = st.checkbox(t("重新查詢外部 API（不使用快取）", "Re-query external APIs (skip cache)"))
     st.caption(t(
-        "平常會重用本機快取以加快分析。勾選後，本次分析會略過現有的 Crossref、OpenAlex、Semantic Scholar 快取，重新查詢已啟用的服務並更新快取；可能更慢，也會消耗 API 額度。",
+        "平常會使用本機快取，加快分析速度。勾選後，這次分析會略過 Crossref、OpenAlex 和 Semantic Scholar 的快取，重新查詢已啟用的服務並更新快取。這可能需要更多時間，也會消耗 API 額度。",
         "Normally, cached API responses speed up analysis. This option skips existing Crossref, OpenAlex, and Semantic Scholar cache entries for this run, re-queries enabled services, and updates the cache. It may be slower and use API quota.",
     ))
     st.divider()
@@ -621,9 +621,9 @@ with st.expander(t("進階設定", "Advanced settings")):
     )
     st.markdown(current_sjr)
     st.markdown(t(
-        "1. 每年到 [SCImago 官方網站](https://www.scimagojr.com/journalrank.php) 檢查並下載最新年度 CSV。\n"
-        "2. 在下方選擇剛下載的 CSV。\n"
-        "3. 按下「驗證並更新」。系統通過格式檢查後才會取代目前版本。",
+        "1. 到 [SCImago 官方網站](https://www.scimagojr.com/journalrank.php) 查看並下載最新年度的 CSV。\n"
+        "2. 在下方選擇下載的 CSV。\n"
+        "3. 按「驗證並更新」。通過格式檢查後，系統才會取代目前的資料。",
         "1. Check the [official SCImago website](https://www.scimagojr.com/journalrank.php) once a year and download the latest CSV.\n"
         "2. Select the downloaded CSV below.\n"
         "3. Choose Validate and update. The current version is replaced only after validation succeeds.",
@@ -645,7 +645,7 @@ with st.expander(t("進階設定", "Advanced settings")):
             st.rerun()
         else:
             pending_path.unlink(missing_ok=True)
-            st.error(t("更新失敗：檔案未通過格式或年份檢查，原本的 SJR 資料沒有被取代。", "Update failed: the file did not pass format or year validation. Existing SJR data was not replaced."))
+            st.error(t("更新失敗：檔案未通過格式或年份檢查；原有的 SJR 資料不受影響。", "Update failed: the file did not pass format or year validation. Existing SJR data was not replaced."))
 
 st.subheader(t("服務狀態", "Service status"))
 cols = st.columns(6)
@@ -696,19 +696,19 @@ if result:
     st.divider(); st.header(t("分析摘要", "Analysis summary"))
     if any(not hasattr(paper, "is_influential_citation") for paper in result.references):
         st.info(t(
-            "目前顯示更新前保存的分析結果。既有指標會繼續顯示；重新分析後可取得新版具影響力引用與作者指標。",
+            "目前顯示的是更新前儲存的分析結果。原有指標仍可查看；重新分析後，才能取得新版的具影響力引用與作者指標。",
             "This result was saved before the scoring update. Existing metrics remain visible; run the analysis again to obtain the revised influential-citation and author metrics.",
         ))
     st.write(f"**{t('原始論文', 'Seed paper')}：** {result.seed.title or t('無法取得標題', 'Title unavailable')}")
     source = result.stats.get("reference_source")
     if source == "crossref":
-        st.info(t("參考文獻來源：Crossref 出版者提交資料；尚未與原文完整核對，清單可能缺漏。", "Reference source: publisher-deposited Crossref data; not fully checked against the paper, and the list may be incomplete."))
+        st.info(t("參考文獻來自出版者提交給 Crossref 的資料，尚未與原文完整核對，可能有遺漏。", "Reference source: publisher-deposited Crossref data; not fully checked against the paper, and the list may be incomplete."))
     elif source:
-        st.info(t(f"參考文獻來源：PDF（{source} 抽取）；尚未確認逐項完整。", f"Reference source: PDF ({source} extraction); item-by-item completeness is unverified."))
+        st.info(t(f"參考文獻從 PDF 以 {source} 抽取，尚未逐筆確認是否完整。", f"Reference source: PDF ({source} extraction); item-by-item completeness is unverified."))
     comparison = result.stats.get("pdf_comparison")
     if comparison and comparison.get("status") == "partial_comparison":
         st.caption(t(
-            f"PDF 與 Crossref DOI 局部比對：PDF 抽出 {comparison['pdf_references']} 筆，其中 {comparison['pdf_dois']} 筆有 DOI；Crossref {comparison['crossref_dois']} 筆有 DOI，重疊 {comparison['shared_dois']} 筆，PDF 獨有 {comparison['pdf_dois'] - comparison['shared_dois']} 筆，Crossref 獨有 {comparison['crossref_dois'] - comparison['shared_dois']} 筆。這不是全文一致性驗證。",
+            f"PDF 與 Crossref 的 DOI 局部比對：PDF 抽出 {comparison['pdf_references']} 筆參考文獻，其中 {comparison['pdf_dois']} 筆有 DOI；Crossref 有 {comparison['crossref_dois']} 筆 DOI。兩邊重疊 {comparison['shared_dois']} 筆，僅 PDF 有 {comparison['pdf_dois'] - comparison['shared_dois']} 筆，僅 Crossref 有 {comparison['crossref_dois'] - comparison['shared_dois']} 筆。這不代表兩份清單的文字完全一致。",
             f"Partial PDF–Crossref DOI comparison: {comparison['pdf_references']} PDF items, {comparison['pdf_dois']} with DOI; {comparison['crossref_dois']} Crossref DOIs, {comparison['shared_dois']} shared, {comparison['pdf_dois'] - comparison['shared_dois']} PDF only, {comparison['crossref_dois'] - comparison['shared_dois']} Crossref only. This does not verify full-text agreement.",
         ))
     summary = st.columns(6)
@@ -733,7 +733,7 @@ if result:
             status_column: st.column_config.TextColumn(
                 status_column,
                 help=t(
-                    "DOI 精確符合代表原始文獻已提供 DOI；高／中可信度符合代表系統依書目資料找到候選項目；尚未辨識代表尚無可靠結果。",
+                    "「DOI 精確符合」表示原始文獻附有 DOI；「高／中可信度符合」表示系統根據書目資料找到候選文獻；「尚未辨識」表示目前沒有可靠的比對結果。",
                     "Exact DOI means the source reference supplied a DOI. High/medium confidence means a candidate was matched from bibliographic data. Unresolved means no reliable result was found.",
                 ),
             ),

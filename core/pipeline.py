@@ -55,7 +55,7 @@ class AnalysisPipeline:
         language: str = "zh-TW",
     ) -> AnalysisResult:
         update = progress or (lambda _step, _message: None)
-        update(1, "使用 GROBID 解析 PDF" if language == "zh-TW" else "Parsing PDF with GROBID")
+        update(1, "正在用 GROBID 解析 PDF" if language == "zh-TW" else "Parsing PDF with GROBID")
         seed, papers = self.grobid.process_pdf(pdf_path)
         return self._finish(seed, papers, enabled, force_refresh, progress, language, "grobid")
 
@@ -76,7 +76,7 @@ class AnalysisPipeline:
                 raise ValueError("Enter a DOI or title, or upload a PDF")
             if use_grobid:
                 return self.analyze(pdf_path, enabled, force_refresh, progress, language)
-            update(1, "從 PDF 辨識原始論文 DOI" if language == "zh-TW" else "Identifying the source DOI from PDF")
+            update(1, "正在從 PDF 辨識原始論文 DOI" if language == "zh-TW" else "Identifying the source DOI from PDF")
             def lookup_title(value: str) -> str | None:
                 try:
                     return resolver.source_work(value, force_refresh)[0].title
@@ -96,7 +96,7 @@ class AnalysisPipeline:
                         continue
                 if not identifier:
                     raise ValueError("Could not verify the source paper from PDF; enter its DOI or title")
-        update(1, "取得 Crossref 原始論文與參考文獻" if language == "zh-TW" else "Fetching source paper and references from Crossref")
+        update(1, "正在從 Crossref 取得原始論文與參考文獻" if language == "zh-TW" else "Fetching source paper and references from Crossref")
         seed, papers = resolver.source_work(identifier, force_refresh)
         crossref_papers = papers
         pdf_references = None
@@ -126,13 +126,13 @@ class AnalysisPipeline:
         result = self._finish(seed, papers, enabled, force_refresh, progress, language, reference_source)
         if reference_source == "crossref":
             result.warnings.insert(0, (
-                "此清單來自出版者提交給 Crossref 的資料，尚未證實與論文 PDF 完全一致；即使有資料也可能缺漏。"
+                "這份清單來自出版者提交給 Crossref 的資料，尚未與論文 PDF 完整核對，可能有遺漏。"
                 if language == "zh-TW" else
                 "This list is publisher-deposited Crossref data, not proven identical to the paper PDF; a nonempty list may still be incomplete."
             ))
         else:
             result.warnings.insert(0, (
-                "Crossref 未提供參考文獻；這份清單從 PDF 抽出，尚未逐項驗證完整性。"
+                "Crossref 未提供參考文獻；這份清單從 PDF 抽取，尚未逐筆確認是否完整。"
                 if language == "zh-TW" else
                 "Crossref supplied no references; this list was extracted from the PDF and has not been checked item by item for completeness."
             ))
@@ -140,7 +140,7 @@ class AnalysisPipeline:
             result.provider_states["crossref"] = "no_references"
         if not crossref_papers and not pdf_references:
             result.warnings.append(
-                ("Crossref 沒有提供參考文獻清單。請上傳 PDF，以原文抽取參考文獻。" if pdf_path is None else "Crossref 沒有提供參考文獻清單，PDF 也未能抽出可用清單。")
+                ("Crossref 沒有參考文獻清單。請上傳 PDF，從原文抽取。" if pdf_path is None else "Crossref 沒有參考文獻清單，PDF 也未能抽出可用清單。")
                 if language == "zh-TW" else
                 ("Crossref has no reference list. Upload the PDF to extract references from the source." if pdf_path is None else "Crossref has no reference list, and the PDF did not yield a usable list.")
             )
@@ -156,14 +156,14 @@ class AnalysisPipeline:
                 "status": "partial_comparison",
             }
             result.warnings.append(
-                "PDF 比對僅涵蓋成功抽出的 DOI，無法證明完整清單或文字逐項一致。"
+                "PDF 比對只涵蓋成功抽出的 DOI，無法證明兩份清單或逐筆文字完全一致。"
                 if language == "zh-TW" else
                 "PDF comparison covers extracted DOIs only; it cannot prove complete list or item-by-item text agreement."
             )
         elif comparison_error:
             result.stats["pdf_comparison"] = {"status": "unavailable", "reason": comparison_error}
             result.warnings.append(
-                f"無法核對 PDF 參考文獻：{comparison_error}" if language == "zh-TW" else f"Could not compare PDF references: {comparison_error}"
+                f"無法與 PDF 中的參考文獻比對：{comparison_error}" if language == "zh-TW" else f"Could not compare PDF references: {comparison_error}"
             )
         return result
 
@@ -187,7 +187,7 @@ class AnalysisPipeline:
         logger.info("Extracted %d references", len(papers))
 
         if enabled.get("crossref"):
-            update(3, message("使用 Crossref 辨識參考文獻", "Resolving references with Crossref"))
+            update(3, message("正在用 Crossref 辨識參考文獻", "Resolving references with Crossref"))
             resolver = CrossrefResolver(self.cache, self.settings.crossref_mailto)
             states["crossref"] = "success"
             failures = 0
@@ -199,10 +199,10 @@ class AnalysisPipeline:
                     paper.provider_data["crossref_error"] = str(exc)
             if failures:
                 states["crossref"] = "partial" if failures < len(papers) else "failed"
-                warnings.append(message(f"Crossref 有 {failures} 篇參考文獻查詢失敗。系統已保留未辨識項目。", f"Crossref failed for {failures} references; unresolved items were retained."))
+                warnings.append(message(f"Crossref 有 {failures} 篇參考文獻查詢失敗；未辨識的項目仍保留在清單中。", f"Crossref failed for {failures} references; unresolved items were retained."))
 
         if enabled.get("openalex"):
-            update(4, message("取得 OpenAlex 學術指標", "Fetching OpenAlex metrics"))
+            update(4, message("正在取得 OpenAlex 學術指標", "Fetching OpenAlex metrics"))
             provider = OpenAlexProvider(self.cache, self.settings.openalex_api_key, self.settings.crossref_mailto)
             try:
                 provider.enrich(papers, force_refresh)
@@ -210,13 +210,13 @@ class AnalysisPipeline:
                 attempted = sum(bool(paper.doi) for paper in papers)
                 states["openalex"] = "partial" if failures else "success"
                 if failures:
-                    warnings.append(message(f"OpenAlex 在 {attempted} 篇具有 DOI 的文獻中，有 {failures} 篇查詢失敗。", f"OpenAlex failed for {failures} of {attempted} references with a DOI."))
+                    warnings.append(message(f"{attempted} 篇有 DOI 的文獻中，有 {failures} 篇未能從 OpenAlex 取得資料。", f"OpenAlex failed for {failures} of {attempted} references with a DOI."))
             except Exception as exc:
                 states["openalex"] = "failed"
-                warnings.append(message(f"OpenAlex 目前無法使用。排名將只採用其餘可用資料。（{exc}）", f"OpenAlex is unavailable; ranking uses the remaining data. ({exc})"))
+                warnings.append(message(f"目前無法取得 OpenAlex 資料；排名會使用其他已取得的資料。（{exc}）", f"OpenAlex is unavailable; ranking uses the remaining data. ({exc})"))
 
         if enabled.get("semantic_scholar"):
-            update(5, message("取得 Semantic Scholar 資料", "Fetching Semantic Scholar data"))
+            update(5, message("正在取得 Semantic Scholar 資料", "Fetching Semantic Scholar data"))
             provider = SemanticScholarProvider(self.cache, self.settings.semantic_scholar_api_key)
             try:
                 provider.enrich_with_seed(seed, papers, force_refresh)
@@ -224,20 +224,20 @@ class AnalysisPipeline:
                     states["semantic_scholar"] = "partial" if any(paper.semantic_scholar_id for paper in papers) else "failed"
                     detail = provider.partial_errors[0]
                     warnings.append(message(
-                        f"Semantic Scholar 部分查詢失敗；已保留取得的資料，缺少的語意與影響力指標不計分。（{detail}）",
+                        f"部分 Semantic Scholar 查詢失敗；已取得的資料仍會保留，缺少的語意與影響力指標不計分。（{detail}）",
                         f"Some Semantic Scholar queries failed; available data was retained, and missing semantic and influential-citation signals were excluded. ({detail})",
                     ))
                 else:
                     states["semantic_scholar"] = "success"
             except Exception as exc:
                 states["semantic_scholar"] = "failed"
-                warnings.append(message(f"Semantic Scholar 目前無法使用。語意相關指標已排除。（{exc}）", f"Semantic Scholar is unavailable; semantic metrics were excluded. ({exc})"))
+                warnings.append(message(f"目前無法取得 Semantic Scholar 資料；語意相關指標不計分。（{exc}）", f"Semantic Scholar is unavailable; semantic metrics were excluded. ({exc})"))
 
         self.sjr.enrich(papers)
 
-        update(6, message("建立局部引用網路", "Building the local citation graph"))
+        update(6, message("正在建立清單內引用網路", "Building the local citation graph"))
         graph = build_local_graph(papers)
-        update(7, message("計算閱讀優先分數", "Calculating Priority Scores"))
+        update(7, message("正在計算閱讀優先分數", "Calculating Priority Scores"))
         rank_papers(papers, self.settings.ranking_weights)
 
         resolved = sum(paper.resolution_status != "unresolved" for paper in papers)

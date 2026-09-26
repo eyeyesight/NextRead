@@ -53,4 +53,4 @@ def test_semantic_scholar_partial_failure_keeps_cached_coverage(tmp_path, monkey
     assert result.stats["semantic_scholar_coverage"] == 1
     assert result.references[0].semantic_relevance_score == 1.0
     assert result.references[0].priority_score is not None
-    assert "已保留取得的資料" in result.warnings[0]
+    assert "已取得的資料仍會保留" in result.warnings[0]

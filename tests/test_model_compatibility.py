@@ -86,5 +86,5 @@ def test_app_renders_metrics_after_loading_a_pre_revision_result(monkeypatch):
     app.run()
 
     assert not app.exception
-    assert any("更新前保存" in message.value for message in app.info)
+    assert any("更新前儲存" in message.value for message in app.info)
     assert any("Legacy result" in table.value.to_string() for table in app.dataframe)

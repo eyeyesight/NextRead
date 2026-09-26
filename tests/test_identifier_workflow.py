@@ -17,7 +17,7 @@ def test_doi_path_needs_neither_pdf_nor_grobid(tmp_path, monkeypatch):
     result = pipeline.analyze_identifier("10.1000/source", ENABLED)
     assert result.stats["reference_source"] == "crossref"
     assert len(result.references) == 1
-    assert "尚未證實" in result.warnings[0]
+    assert "尚未與論文 PDF 完整核對" in result.warnings[0]
 
 
 def test_missing_crossref_references_are_explicit(tmp_path, monkeypatch):
@@ -26,7 +26,7 @@ def test_missing_crossref_references_are_explicit(tmp_path, monkeypatch):
     result = pipeline.analyze_identifier("10.1000/source", ENABLED)
     assert result.references == []
     assert result.provider_states["crossref"] == "no_references"
-    assert any("沒有提供參考文獻" in warning for warning in result.warnings)
+    assert any("沒有參考文獻清單" in warning for warning in result.warnings)
 
 
 def test_optional_pdf_extraction_failure_keeps_unverified_crossref_result(tmp_path, monkeypatch):
@@ -38,7 +38,7 @@ def test_optional_pdf_extraction_failure_keeps_unverified_crossref_result(tmp_pa
     result = pipeline.analyze_identifier("10.1000/source", ENABLED, pdf_path=tmp_path / "source.pdf")
     assert len(result.references) == 1
     assert result.stats["pdf_comparison"]["status"] == "unavailable"
-    assert "尚未證實" in result.warnings[0]
+    assert "尚未與論文 PDF 完整核對" in result.warnings[0]
 
 
 def test_pdf_comparison_reports_doi_overlap_without_claiming_parity(tmp_path, monkeypatch):
@@ -53,7 +53,7 @@ def test_pdf_comparison_reports_doi_overlap_without_claiming_parity(tmp_path, mo
     result = pipeline.analyze_identifier("10.1000/source", ENABLED, pdf_path=tmp_path / "source.pdf")
     assert result.stats["pdf_comparison"]["shared_dois"] == 1
     assert result.stats["pdf_comparison"]["status"] == "partial_comparison"
-    assert any("無法證明完整清單" in warning for warning in result.warnings)
+    assert any("無法證明兩份清單" in warning for warning in result.warnings)
 
 
 def test_missing_crossref_list_uses_extractable_pdf(tmp_path, monkeypatch):

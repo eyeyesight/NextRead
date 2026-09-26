@@ -39,18 +39,18 @@ def check_grobid_ready(
     address = urlparse(client.base_url)
     if address.scheme != "http" or address.hostname not in ("localhost", "127.0.0.1") or address.port != 8070:
         if not client.is_available():
-            raise GrobidUnavailableError("自訂 GROBID_URL 尚未連線；請先手動啟動對應服務。")
+            raise GrobidUnavailableError("無法連線到自訂的 GROBID_URL；請先啟動對應服務。")
         return
 
     docker = find_docker()
     if not docker:
-        raise GrobidUnavailableError("找不到 Docker 命令；請先安裝並手動啟動 Docker Desktop。")
+        raise GrobidUnavailableError("找不到 Docker 命令。請先安裝並開啟 Docker Desktop。")
     try:
         info = subprocess.run([docker, "info"], cwd=project_dir, capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise GrobidUnavailableError("Docker 引擎尚未就緒；請手動開啟 Docker Desktop 後重新檢查。") from exc
+        raise GrobidUnavailableError("Docker 引擎尚未就緒。請開啟 Docker Desktop 後重新檢查。") from exc
     if info.returncode:
-        raise GrobidUnavailableError("Docker 引擎尚未就緒；請手動開啟 Docker Desktop 後重新檢查。")
+        raise GrobidUnavailableError("Docker 引擎尚未就緒。請開啟 Docker Desktop 後重新檢查。")
 
     try:
         services = subprocess.run(
@@ -61,7 +61,7 @@ def check_grobid_ready(
             timeout=10,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise GrobidUnavailableError("無法確認 GROBID 容器狀態；請手動檢查 Docker Desktop。") from exc
+        raise GrobidUnavailableError("無法確認 GROBID 容器狀態。請到 Docker Desktop 查看。") from exc
     if services.returncode or "grobid" not in services.stdout.splitlines():
         try:
             legacy = subprocess.run(
@@ -72,9 +72,9 @@ def check_grobid_ready(
                 timeout=10,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise GrobidUnavailableError("無法確認舊版 GROBID 容器狀態；請手動檢查 Docker Desktop。") from exc
+            raise GrobidUnavailableError("無法確認舊版 GROBID 容器狀態。請到 Docker Desktop 查看。") from exc
         if legacy.returncode or "grobid" not in legacy.stdout.splitlines():
-            raise GrobidUnavailableError("GROBID 容器尚未執行；請在專案資料夾手動執行 `docker compose up -d grobid`，再重新檢查。")
+            raise GrobidUnavailableError("GROBID 容器尚未執行。請到專案資料夾執行 `docker compose up -d grobid`，再重新檢查。")
     for attempt in range(1, api_attempts + 1):
         if client.is_available():
             return
@@ -82,4 +82,4 @@ def check_grobid_ready(
             if on_retry:
                 on_retry(attempt)
             time.sleep(2)
-    raise GrobidUnavailableError("GROBID 容器正在執行，但 API 尚未回應；請稍後重新檢查。")
+    raise GrobidUnavailableError("GROBID 容器正在執行，但 API 尚未回應。請稍後重新檢查。")

@@ -2,37 +2,37 @@
 
 **[操作 Demo](DEMO.md)** · **[安裝與啟動](#windows-安裝與啟動)** · **[計分方式](#scoring-methodology)**
 
-NextRead 是一套本機 Streamlit 工具。輸入論文 DOI 或標題即可從 Crossref 取得出版者提交的 references，補充學術指標並產生建議閱讀順序。PDF 可用於抽取或局部比對參考文獻。**Docker 完全選用**：不用安裝也能快速推薦；若要盡量取得與原論文相符的完整參考文獻，建議上傳 PDF 並選用由 Docker 執行的 GROBID。任何自動抽取結果仍需與原文核對。
+NextRead 是在本機執行的 Streamlit 工具。輸入論文 DOI 或標題後，它會從 Crossref 取得出版者提交的參考文獻清單，補上學術指標，並建議閱讀順序。也可以上傳 PDF，抽取參考文獻或局部比對清單。**Docker 不是必備**：不安裝也能取得閱讀建議；若希望從 PDF 盡量擷取完整清單，建議使用透過 Docker 執行的 GROBID。自動抽取的結果仍須與原文核對。
 
 Reading Priority 回答一個具體問題：
 
 > 在目前這篇論文引用的文獻中，接下來應該先讀哪一篇？
 
-分數代表同一次分析中的相對閱讀優先度，不代表跨領域或跨清單通用的學術品質。
+分數只用來比較同一次分析的文獻，不代表跨領域、跨清單通用的學術品質。
 
 ## 功能
 
-- 使用 Crossref 取得原始論文及出版者提交的 reference list；此清單可能缺漏，不能視為與 PDF 完全一致
-- 選擇性上傳 PDF，以文字抽取辨識原始 DOI 或局部比對 DOI；GROBID 可在進階設定中選用
-- 使用 OpenAlex 取得 field-normalized impact、作者、來源與主題資料
-- 使用 reference set 內部的 citation links 計算 Local PageRank、Local In-Degree 與 Local Connectivity
+- 從 Crossref 取得原始論文及出版者提交的參考文獻清單；清單可能缺漏，不能視為與 PDF 完全一致
+- 選擇性上傳 PDF，從文字中辨識原始論文 DOI，或局部比對參考文獻 DOI；也可在進階設定中選用 GROBID
+- 從 OpenAlex 取得經領域校正的影響力、作者、發表來源與主題資料
+- 根據清單內文獻彼此的引用關係，計算 Local PageRank、Local In-Degree 和 Local Connectivity
 - 使用 Semantic Scholar SPECTER2 embeddings 計算語意相似度
-- 使用 Semantic Scholar 判斷 seed paper 指向各 reference 的 influential citation relationship
-- 依可用證據計算 0–100 Reading Priority 與 Evidence Coverage
+- 使用 Semantic Scholar 判斷原始論文對每篇參考文獻的引用是否具有影響力
+- 根據可取得的證據，計算 0–100 的 Reading Priority 和 Evidence Coverage
 - 提供欄位篩選、文獻細節、CSV 與 JSON 匯出
 - 將 API 回應快取於本機 SQLite
 
 ## 專案定位與平台支援
 
-NextRead 目前是從原始碼執行的本機應用程式，不是已封裝的 Windows 安裝程式或單一執行檔。第一次使用前需安裝 Python 與 Python dependencies；只有選用 GROBID PDF 解析時才需要 Docker。
+NextRead 目前須從原始碼執行，尚未提供 Windows 安裝程式或單一執行檔。初次使用需要安裝 Python 與專案依賴套件；只有選用 GROBID 解析 PDF 時才需要 Docker。
 
 | 平台 | 支援狀態 |
 |---|---|
-| Windows 10/11 | 主要開發與驗證環境，提供 `start-nextread.cmd` 一鍵啟動器，但仍需先完成初次安裝 |
-| macOS | 核心程式預期可以手動啟動，但 Windows 啟動器不適用，目前未正式測試 |
-| Linux | 核心程式預期可以手動啟動，但 Windows 啟動器不適用，目前未正式測試 |
+| Windows 10/11 | 主要開發與測試環境。完成初次安裝後，可用 `start-nextread.cmd` 啟動 |
+| macOS | 預期可手動啟動核心程式；Windows 啟動器不適用，尚未正式測試 |
+| Linux | 預期可手動啟動核心程式；Windows 啟動器不適用，尚未正式測試 |
 
-macOS 與 Linux 採 best-effort 支援，本專案不承諾持續維護各平台差異，若遇到平台特有問題，歡迎透過 issue 或 pull request 補充。
+macOS 與 Linux 僅提供 best-effort 支援，尚未承諾持續維護各平台差異。如遇到平台特有問題，歡迎提出 issue 或 pull request。
 
 ## Windows 安裝與啟動
 
@@ -63,22 +63,22 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-API Key 均為選填，未設定時系統會嘗試使用各服務的公開存取額度，申請方式與各欄位用途請見「API 與本機設定」。
+API Key 都是選填；未設定時，系統會嘗試使用各服務的公開額度。申請方式與欄位用途請見「API 與本機設定」。
 
 ### 4. 啟動 NextRead
 
-完成初次安裝後，可以直接執行 `start-nextread.cmd`。它只會啟動 NextRead 並在預設瀏覽器開啟 <http://localhost:8501>，不會啟動 Docker。若要使用 GROBID，請先自行啟動 Docker Desktop，再於本專案資料夾手動執行 `docker compose up -d grobid`。在介面的進階設定勾選「使用 GROBID 解析 PDF」時，NextRead 只會檢查 Docker 引擎、GROBID 容器與 API 是否就緒；未就緒時會顯示原因，待手動處理後可按「重新檢查 GROBID」。新的 Docker Compose 專案固定命名為 `nextread`（Compose 不接受大寫），容器通常顯示為 `nextread-grobid-1`，不再跟隨專案資料夾名稱。
+完成初次安裝後，執行 `start-nextread.cmd` 即可啟動 NextRead，並在預設瀏覽器開啟 <http://localhost:8501>。啟動器不會開啟 Docker。若要使用 GROBID，請自行開啟 Docker Desktop，並在專案資料夾執行 `docker compose up -d grobid`。勾選介面中的「使用 GROBID 解析 PDF」時，NextRead 只會檢查 Docker、GROBID 容器和 API 是否就緒；若尚未就緒，處理畫面提示的問題後，可按「重新檢查 GROBID」。Docker Compose 專案名稱固定為 `nextread`（Compose 不接受大寫），容器通常名為 `nextread-grobid-1`，不再隨資料夾名稱變動。
 
 #### 已安裝舊版 GROBID 的使用者
 
-先前從 `AcademicReferences` 資料夾啟動的容器通常屬於 `academicreferences` 專案。更新程式碼後，舊容器**不會自動改名、停止或刪除**；NextRead 仍可辨識並使用執行中的舊容器。如果要改用新名稱，請先確認舊專案名稱（`docker compose ls`），再於本專案資料夾執行：
+先前從 `AcademicReferences` 資料夾啟動的容器，通常屬於 `academicreferences` 專案。更新程式碼不會自動改名、停止或刪除舊容器；只要它仍在執行，NextRead 就能辨識並使用。若想改用新名稱，先用 `docker compose ls` 確認舊專案名稱，再到本專案資料夾執行：
 
 ```powershell
 docker compose -p academicreferences stop grobid
 docker compose up -d grobid
 ```
 
-這只會停止舊 GROBID 容器並以 `nextread` 專案啟動新容器；不會執行 `down` 或刪除舊容器。若舊專案名稱不是 `academicreferences`，請將第一行的名稱換成 `docker compose ls` 顯示的值。請勿在舊容器仍占用 8070 埠時直接啟動新容器。
+這兩個指令會停止舊 GROBID 容器，再以 `nextread` 專案啟動新容器；不會執行 `down`，也不會刪除舊容器。如果舊專案名稱不是 `academicreferences`，請把第一行換成 `docker compose ls` 顯示的名稱。舊容器仍占用 8070 埠時，請勿直接啟動新容器。
 
 也可以在 PowerShell 中手動執行：
 
@@ -86,7 +86,7 @@ docker compose up -d grobid
 .\.venv\Scripts\streamlit.exe run app.py
 ```
 
-若使用自訂 `GROBID_URL`，請自行啟動對應服務；NextRead 只檢查該服務的 API，不會啟動 Docker 或容器。
+如果自行設定了 `GROBID_URL`，也須自行啟動對應服務；NextRead 只檢查其 API，不會啟動 Docker 或容器。
 
 ## macOS 與 Linux 手動啟動
 
@@ -103,7 +103,7 @@ nano .env
 streamlit run app.py
 ```
 
-開啟 <http://localhost:8501>，若 Docker image、Python wheel 或檔案權限在特定平台出現問題，請將其視為尚未驗證的平台相容性問題，而不是已承諾支援的發行環境。
+接著開啟 <http://localhost:8501>。若特定平台的 Docker image、Python wheel 或檔案權限發生問題，請留意：這些平台尚未完成相容性驗證。
 
 ## 分析流程
 
@@ -127,54 +127,54 @@ Reading Priority and Evidence Coverage
 
 | 模式 | 內容 |
 |---|---|
-| 僅解析 | 取得 Crossref references 或解析 PDF，不查詢外部指標 |
+| 僅解析 | 取得 Crossref 參考文獻清單或解析 PDF，不查詢外部指標 |
 | 標準分析 | 加入 Crossref、OpenAlex、SJR 與局部引用網路 |
 | 完整分析 | 加入 Semantic Scholar 語意相似度與具影響力引用關係 |
 
-個別 provider 失敗時，系統保留已取得的結果，排除缺失維度，並顯示警告。
+即使個別資料服務查詢失敗，已取得的結果仍會保留。系統會排除缺少資料的計分維度，並顯示警告。
 
 ## Scoring methodology
 
-Reading Priority 由六個維度組成：
+Reading Priority 包含六個計分維度：
 
 $$
 Score = 30I + 25N + 25S + 10H + 6A + 4V
 $$
 
-所有 component scores 會先轉換至 $[0,1]$。
+各維度分數會先轉換到 $[0,1]$。
 
 | Component | Default weight | Evidence status | 計算原則 |
 |---|---:|---|---|
-| Field-normalized impact | 30% | Project baseline | 優先使用 OpenAlex citation-normalized percentile，其次使用 reference set 內的 FWCI percentile，再以 citation count percentile 補足 |
-| Local citation network | 25% | Project baseline | 綜合 Local In-Degree、Local PageRank 與 Local Connectivity |
-| Semantic relevance | 25% | Project baseline | 計算 seed paper 與 reference 的 SPECTER2 cosine similarity |
+| Field-normalized impact | 30% | Project baseline | 優先採用 OpenAlex citation-normalized percentile；若缺少資料，改用清單內的 FWCI percentile，最後才用 citation count percentile |
+| Local citation network | 25% | Project baseline | 結合 Local In-Degree、Local PageRank 和 Local Connectivity |
+| Semantic relevance | 25% | Project baseline | 計算原始論文與參考文獻的 SPECTER2 cosine similarity |
 | Influential citation relationship | 10% | Project baseline | 使用 focal-paper → reference citation edge 的 `isInfluential` |
-| Author influence | 6% | Project-derived | 使用全部可取得作者的 median 與 maximum h-index |
-| Venue influence | 4% | Project-derived | 綜合 source h-index 與 2-year mean citedness，作為低權重的來源背景訊號 |
+| Author influence | 6% | Project-derived | 使用所有已取得作者的 median 和 maximum h-index |
+| Venue influence | 4% | Project-derived | 結合 source h-index 與 2-year mean citedness，以低權重反映發表來源的背景 |
 
-這組 `30 / 25 / 25 / 10 / 6 / 4` 權重是 literature-informed project baseline，文獻支持各類訊號的選擇與部分子權重，但完整六維比例尚未經本專案人工標記資料集驗證。
+`30 / 25 / 25 / 10 / 6 / 4` 是參考文獻訂出的專案基準權重。相關研究支持這些訊號及部分子權重的選擇，但六個維度的完整比例尚未經本專案的人工標記資料集驗證。
 
 ### Field-normalized impact
 
-OpenAlex citation-normalized percentile 已控制領域、年份與 work type 時，系統直接使用該 $[0,1]$ 值，缺少 percentile 時，系統在目前 reference set 內對 FWCI 進行 percentile normalization，Citation Count 僅作為最後的 fallback。
+如果 OpenAlex 提供已校正領域、年份與文獻類型的 citation-normalized percentile，系統會直接使用該 $[0,1]$ 值。若缺少這項資料，則在目前的參考文獻清單中，將 FWCI 轉為百分位；最後才以 Citation Count 補足。
 
-這個順序降低 field citation density、publication age 與極端 citation values 對排序的影響。
+這個順序有助於降低領域引用密度、出版時間和極端引用次數對排序的影響。
 
 ### Influential citation relationship
 
-Influential Citation 描述一條指定方向的 citation edge：
+Influential Citation 判斷的是一條有方向的引用關係：
 
 ```text
 Seed paper → Reference
 ```
 
-`true` 代表 Semantic Scholar 判定這條引用關係具有實質影響，`false` 代表已取得明確的 negative evidence，`unknown` 代表系統缺少足夠資料。
+`true` 表示 Semantic Scholar 判定這條引用關係具有實質影響；`false` 表示已取得明確的否定結果；`unknown` 表示資料不足。
 
-Semantic Scholar 的 paper-level `influentialCitationCount` 描述 reference 在整體學術網路中收到的具影響力引用次數，系統不使用該數值代替 edge-level evidence。
+Semantic Scholar 的 paper-level `influentialCitationCount` 是這篇參考文獻在整體學術網路中收到的具影響力引用次數，不能代替目前這條引用關係的判定。
 
 ### Author influence
 
-系統取得一篇文章所有可用作者的 h-index，計算 raw median 與 raw maximum，再分別在目前 reference set 中標準化。
+系統取得一篇文章所有已知作者的 h-index，算出中位數與最大值，再分別按目前的參考文獻清單標準化。
 
 ```math
 \mathrm{AuthorScore}
@@ -182,13 +182,13 @@ Semantic Scholar 的 paper-level `influentialCitationCount` 描述 reference 在
 + 0.3903 \times \mathrm{MaxH}_{\mathrm{norm}}
 ```
 
-Jinadu et al. (2026) 發表的 author authority weights 為 median h-index `0.2918` 與 maximum h-index `0.1868`，只在這兩個 author signals 內重新正規化後，得到本專案使用的 `0.6097 / 0.3903`。
+Jinadu et al. (2026) 給 median h-index 的權重為 `0.2918`，maximum h-index 為 `0.1868`。只在這兩項作者指標之間重新正規化，便得到本專案使用的 `0.6097 / 0.3903`。
 
-作者順位不參與 Author Influence，介面同時顯示 Author Metadata Coverage，讓缺失作者資料保持可見。
+Author Influence 不計入作者順位。介面另有 Author Metadata Coverage，可查看作者資料缺漏的程度。
 
 ### Missing metadata
 
-缺失資料以 `unknown` 表示，系統不將缺失值轉成零。
+缺少的資料標為 `unknown`，不計作零。
 
 若可用維度集合為 $\mathcal{K}$，分數計算方式為：
 
@@ -199,11 +199,11 @@ Score_{available} =
 {\sum_{k\in\mathcal{K}} w_k}
 $$
 
-Evidence Coverage 等於可用維度權重除以全部設定權重，低 coverage 代表分數依賴較少類型的證據。
+Evidence Coverage 是可用維度的權重占全部設定權重的比例。涵蓋率越低，代表分數依據的證據類型越少。
 
 ## 指標解讀
 
-介面右上角的「指標說明」包含每個欄位的 What、Principle、Why 與 How，主要原始欄位包括：
+介面右上角的「指標說明」依 What、Principle、Why 和 How 介紹各欄位。主要指標包括：
 
 - Local PageRank 與 Local In-Degree
 - Semantic Similarity
@@ -215,13 +215,13 @@ Evidence Coverage 等於可用維度權重除以全部設定權重，低 coverag
 
 ## SJR 資料
 
-Q1–Q4 來自 SCImago Journal Rank 官方匯出檔，系統不從 Citation Count 或 Reading Priority 推算 Quartile。
+Q1–Q4 取自 SCImago Journal Rank 官方匯出檔，不會由 Citation Count 或 Reading Priority 推算。
 
 1. 前往 [SCImago journal ranking](https://www.scimagojr.com/journalrank.php) 下載 CSV
 2. 在應用程式展開「進階設定」
 3. 使用「手動更新 SJR 資料」驗證並安裝檔案
 
-系統先依 ISSN 配對，再依正規化 journal title 配對，預設檔案位置為 `data/sjr/scimagojr 2024.csv`，`SJR_DATA_PATH` 可覆寫該位置。
+系統會先用 ISSN 配對，再比對正規化後的期刊名稱。預設檔案位置是 `data/sjr/scimagojr 2024.csv`，可用 `SJR_DATA_PATH` 更改。
 
 若採用預設路徑，資料夾結構應為：
 
@@ -232,16 +232,16 @@ NextRead/
         └── scimagojr 2024.csv
 ```
 
-CSV 不應放在專案根目錄，也不會上傳至 GitHub，每位使用者需自行下載，再透過「進階設定 → 手動更新 SJR 資料」安裝，或手動放到上述路徑，若檔名、年份或位置不同，請在 `.env` 中設定 `SJR_DATA_PATH`。
+請勿把 CSV 放在專案根目錄或上傳至 GitHub。每位使用者須自行下載，再透過「進階設定 → 手動更新 SJR 資料」安裝，或放到上述路徑。若檔名、年份或路徑不同，請在 `.env` 設定 `SJR_DATA_PATH`。
 
 ## API 與本機設定
 
-Ranking weights 位於 `config/settings.yaml`，API 與路徑設定位於 `.env`。
+計分權重寫在 `config/settings.yaml`；API 與檔案路徑則設定在 `.env`。
 
-專案同時保留兩個不同用途的環境設定檔：
+專案提供兩種用途不同的環境設定檔：
 
-- `.env.example` 是會上傳至 GitHub 的公開範本，只列出支援的設定名稱，不可填入真實密鑰
-- `.env` 是每位使用者自己的本機設定，可能包含 API Key，因此已由 `.gitignore` 排除
+- `.env.example` 是上傳至 GitHub 的公開範本，只列出支援的設定名稱，請勿填入真實密鑰
+- `.env` 存放個人的本機設定，可能包含 API Key，因此已由 `.gitignore` 排除
 
 首次安裝時建立 `.env`：
 
@@ -270,7 +270,7 @@ GROBID_URL=http://localhost:8070
 
 儲存 `.env` 後重新啟動 NextRead，不要將 `.env`、API Key 或其他憑證提交到 Git。
 
-API 回應預設快取 30 天，`data/cache.db` 保存快取內容。分析頁面的「重新查詢外部 API（不使用快取）」只影響該次分析：略過現有 Crossref、OpenAlex、Semantic Scholar 回應，向已啟用的服務重新查詢並更新快取；可能較慢，也會消耗 API 額度，不會清空整個快取。畫面會顯示 OpenAlex 與 Semantic Scholar API Key 是否已載入、對應服務本次是否啟用；不會顯示 Key 值。API Key 狀態僅表示設定已載入，不代表 Key 已驗證有效。服務未啟用或命中快取時，不會用該 Key 發出新請求。
+API 回應預設快取 30 天，內容保存在 `data/cache.db`。「重新查詢外部 API（不使用快取）」只影響這次分析：略過現有的 Crossref、OpenAlex 和 Semantic Scholar 快取，重新查詢已啟用的服務並更新快取。查詢可能較慢，也會消耗 API 額度；原有快取不會整批清除。畫面會顯示 OpenAlex 與 Semantic Scholar 是否啟用，以及各自的 API Key 是否載入，但不會顯示 Key 值。顯示「API Key 已載入」不代表 Key 已驗證有效；服務未啟用或結果命中快取時，也不會使用該 Key 發出新請求。
 
 ## 開發與驗證
 
@@ -294,7 +294,7 @@ python -m compileall app.py core parsers providers resolvers graph storage
 | `6% / 4%` author and venue split | Project-derived allocation within a project-defined 10% metadata block |
 | `30 / 25 / 25 / 10 / 6 / 4` | Literature-informed project baseline |
 
-Bibliometric composite indicators 對權重、相關指標與 normalization 方法敏感，後續版本可建立人工標記的 reference importance dataset，使用 nDCG、MAP 與 MRR 校準權重。
+綜合型書目計量指標容易受到權重、指標之間的相關性和標準化方法影響。未來可建立人工標記的參考文獻重要性資料集，再用 nDCG、MAP 和 MRR 校準權重。
 
 ## References
 
