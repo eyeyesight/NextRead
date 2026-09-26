@@ -10,11 +10,29 @@ def test_api_key_feedback_describes_configuration_without_revealing_keys(monkeyp
     monkeypatch.setenv("OPENALEX_API_KEY", "test-openalex-secret")
     monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "test-semantic-secret")
     app = AppTest.from_file(APP_PATH, default_timeout=15).run()
+    metrics = {item.label: item.value for item in app.metric}
+    assert metrics["OpenAlex"] == "已啟用"
+    assert metrics["Semantic Scholar"] == "未啟用"
+    assert "OpenAlex API Key" not in metrics
+    assert "Semantic Scholar API Key" not in metrics
     captions = "\n".join(item.value for item in app.caption)
-    assert "OpenAlex API Key：已載入" in captions
-    assert "Semantic Scholar API Key：已載入；本次未啟用" in captions
-    assert "test-openalex-secret" not in captions
-    assert "test-semantic-secret" not in captions
+    assert captions.count("API Key 已載入") == 2
+    assert "不代表 Key 已驗證有效" not in captions
+    assert "test-openalex-secret" not in str(app)
+    assert "test-semantic-secret" not in str(app)
+    assert not app.exception
+
+
+def test_api_key_metrics_distinguish_missing_keys_from_enabled_services(monkeypatch):
+    monkeypatch.setenv("OPENALEX_API_KEY", "")
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "")
+    app = AppTest.from_file(APP_PATH, default_timeout=15).run()
+    app.radio[0].set_value("complete").run()
+    metrics = {item.label: item.value for item in app.metric}
+    assert metrics["OpenAlex"] == "已啟用"
+    assert metrics["Semantic Scholar"] == "已啟用"
+    captions = "\n".join(item.value for item in app.caption)
+    assert captions.count("API Key 未設定") == 2
     assert not app.exception
 
 

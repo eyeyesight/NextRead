@@ -270,7 +270,7 @@ GROBID_URL=http://localhost:8070
 
 儲存 `.env` 後重新啟動 NextRead，不要將 `.env`、API Key 或其他憑證提交到 Git。
 
-API 回應預設快取 30 天，`data/cache.db` 保存快取內容。分析頁面的「重新查詢外部 API（不使用快取）」只影響該次分析：略過現有 Crossref、OpenAlex、Semantic Scholar 回應，向已啟用的服務重新查詢並更新快取；可能較慢，也會消耗 API 額度，不會清空整個快取。畫面會顯示 OpenAlex 與 Semantic Scholar API Key 是否已載入、對應服務本次是否啟用；不會顯示 Key 值，也不會宣稱已驗證 Key 有效。命中快取時不會向 API 發送新請求，因此也不會在該次使用 Key。
+API 回應預設快取 30 天，`data/cache.db` 保存快取內容。分析頁面的「重新查詢外部 API（不使用快取）」只影響該次分析：略過現有 Crossref、OpenAlex、Semantic Scholar 回應，向已啟用的服務重新查詢並更新快取；可能較慢，也會消耗 API 額度，不會清空整個快取。畫面會顯示 OpenAlex 與 Semantic Scholar API Key 是否已載入、對應服務本次是否啟用；不會顯示 Key 值。API Key 狀態僅表示設定已載入，不代表 Key 已驗證有效。服務未啟用或命中快取時，不會用該 Key 發出新請求。
 
 ## 開發與驗證
 

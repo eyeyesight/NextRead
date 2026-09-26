@@ -57,12 +57,6 @@ def t(zh: str, en: str) -> str:
     return zh if language == "zh-TW" else en
 
 
-def api_key_status(configured: bool, enabled: bool) -> str:
-    if not enabled:
-        return t("已載入；本次未啟用" if configured else "未設定；本次未啟用", "Loaded; not enabled for this analysis" if configured else "Not set; not enabled for this analysis")
-    return t("已載入；新請求會使用" if configured else "未設定；使用公開額度", "Loaded; used for new requests" if configured else "Not set; using public access")
-
-
 def request_grobid_recheck() -> None:
     st.session_state["grobid_check_done"] = False
     st.session_state["grobid_recheck_requested"] = True
@@ -659,15 +653,11 @@ grobid_metric = cols[0].empty()
 grobid_metric.metric("GROBID", (t("已就緒", "Ready") if not st.session_state.get("grobid_check_error") else t("未就緒", "Not ready")) if use_grobid else t("未選用", "Not selected"))
 cols[1].metric(t("Crossref 逐筆查詢", "Crossref per-reference"), t("已啟用", "Enabled") if crossref else t("未啟用", "Disabled"))
 cols[2].metric("OpenAlex", t("已啟用", "Enabled") if openalex else t("未啟用", "Disabled"))
+cols[2].caption(t("API Key 已載入", "API key loaded") if settings.openalex_api_key else t("API Key 未設定", "API key not set"))
 cols[3].metric("Semantic Scholar", t("未啟用", "Disabled") if not semantic_scholar else t("已啟用", "Enabled"))
+cols[3].caption(t("API Key 已載入", "API key loaded") if settings.semantic_scholar_api_key else t("API Key 未設定", "API key not set"))
 cols[4].metric("SJR", str(pipeline.sjr.year or t("已載入", "Loaded")) if pipeline.sjr.available else t("無資料", "No data"))
 cols[5].metric("Scite", t("尚未實作", "Not implemented"))
-openalex_key_status = api_key_status(bool(settings.openalex_api_key), openalex)
-semantic_key_status = api_key_status(bool(settings.semantic_scholar_api_key), semantic_scholar)
-st.caption(t(
-    f"OpenAlex API Key：{openalex_key_status}；Semantic Scholar API Key：{semantic_key_status}。此處只顯示設定是否載入，不驗證 Key 有效性；若命中快取就不會發出新請求。",
-    f"OpenAlex API Key: {openalex_key_status}; Semantic Scholar API Key: {semantic_key_status}. This shows whether keys were loaded, not whether they are valid. Cached results make no new API request.",
-))
 
 if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (identifier.strip() or uploaded)):
     bar, text = st.progress(0), st.empty()
