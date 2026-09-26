@@ -1,6 +1,7 @@
 import requests
 
 from core.models import ReferencePaper, SeedPaper
+from providers.http import RateLimitedError
 from providers.semantic_scholar import SemanticScholarProvider
 from storage.cache import ApiCache
 
@@ -90,3 +91,50 @@ def test_influential_edges_refresh_cached_responses_without_reference_ids(tmp_pa
 
     assert edges == {"reference": True}
     assert provider.http.calls == 1
+
+
+def test_references_rate_limit_preserves_paper_metadata_and_similarity(tmp_path):
+    class ReferencesRateLimitedHttp:
+        def post_json(self, *_args, **_kwargs):
+            return [
+                {"paperId": "seed", "embedding": {"vector": [1.0, 0.0]}},
+                {"paperId": "cited", "embedding": {"vector": [1.0, 0.0]}},
+            ]
+
+        def get_json(self, *_args, **_kwargs):
+            raise RateLimitedError("Rate limited by references endpoint")
+
+    provider = SemanticScholarProvider(ApiCache(tmp_path / "cache.db"), "test-key")
+    provider.http = ReferencesRateLimitedHttp()
+    paper = ReferencePaper(doi="10.1000/cited")
+
+    provider.enrich_with_seed(SeedPaper(doi="10.1000/seed"), [paper])
+
+    assert paper.semantic_scholar_id == "cited"
+    assert paper.semantic_similarity == 1.0
+    assert paper.is_influential_citation is None
+    assert provider.partial_errors == ["Rate limited by references endpoint"]
+
+
+def test_batch_rate_limit_preserves_cached_paper_metadata(tmp_path):
+    class BatchRateLimitedHttp:
+        def post_json(self, *_args, **_kwargs):
+            raise RateLimitedError("Rate limited by batch endpoint")
+
+        def get_json(self, *_args, **_kwargs):
+            raise AssertionError("Do not send another request after a rate limit")
+
+    cache = ApiCache(tmp_path / "cache.db")
+    cache.set("semantic_scholar", "doi:10.1000/seed", {"paperId": "seed", "embedding": {"vector": [1.0, 0.0]}})
+    cache.set("semantic_scholar", "doi:10.1000/cited", {"paperId": "cited", "embedding": {"vector": [1.0, 0.0]}})
+    provider = SemanticScholarProvider(cache, "test-key")
+    provider.http = BatchRateLimitedHttp()
+    cited = ReferencePaper(doi="10.1000/cited")
+    missing = ReferencePaper(doi="10.1000/missing")
+
+    provider.enrich_with_seed(SeedPaper(doi="10.1000/seed"), [cited, missing])
+
+    assert cited.semantic_scholar_id == "cited"
+    assert cited.semantic_similarity == 1.0
+    assert missing.semantic_scholar_id is None
+    assert provider.partial_errors == ["Rate limited by batch endpoint"]

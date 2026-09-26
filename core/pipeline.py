@@ -9,6 +9,7 @@ from core.models import AnalysisResult
 from core.ranking import rank_papers
 from graph.local_citation_graph import build_local_graph
 from parsers.grobid import GrobidClient
+from parsers.pdf_text import extract_numbered_references, title_matches_first_page, verified_seed_doi
 from providers.openalex import OpenAlexProvider
 from providers.semantic_scholar import SemanticScholarProvider
 from providers.sjr import SjrProvider
@@ -17,6 +18,25 @@ from storage.cache import ApiCache
 
 logger = logging.getLogger(__name__)
 Progress = Callable[[int, str], None]
+
+
+def pdf_matches_seed(pdf_path: str | Path, title: str | None) -> bool:
+    from pypdf import PdfReader
+
+    first_page = PdfReader(pdf_path).pages[0].extract_text() or ""
+    return bool(title and title_matches_first_page(title, first_page))
+
+
+def pdf_title_hints(pdf_path: str | Path) -> list[str]:
+    from pypdf import PdfReader
+
+    reader = PdfReader(pdf_path)
+    metadata_title = (reader.metadata.title or "").strip() if reader.metadata else ""
+    lines = [line.strip() for line in (reader.pages[0].extract_text() or "").splitlines() if line.strip()]
+    hints = [metadata_title] if len(metadata_title) >= 35 and len(metadata_title.split()) >= 5 else []
+    if len(lines) >= 3:
+        hints.append(" ".join(lines[1:3]))
+    return hints
 
 
 class AnalysisPipeline:
@@ -35,15 +55,135 @@ class AnalysisPipeline:
         language: str = "zh-TW",
     ) -> AnalysisResult:
         update = progress or (lambda _step, _message: None)
+        update(1, "使用 GROBID 解析 PDF" if language == "zh-TW" else "Parsing PDF with GROBID")
+        seed, papers = self.grobid.process_pdf(pdf_path)
+        return self._finish(seed, papers, enabled, force_refresh, progress, language, "grobid")
+
+    def analyze_identifier(
+        self,
+        identifier: str,
+        enabled: dict[str, bool],
+        pdf_path: str | Path | None = None,
+        force_refresh: bool = False,
+        progress: Progress | None = None,
+        language: str = "zh-TW",
+        use_grobid: bool = False,
+    ) -> AnalysisResult:
+        update = progress or (lambda _step, _message: None)
+        resolver = CrossrefResolver(self.cache, self.settings.crossref_mailto)
+        if not identifier.strip():
+            if pdf_path is None:
+                raise ValueError("Enter a DOI or title, or upload a PDF")
+            if use_grobid:
+                return self.analyze(pdf_path, enabled, force_refresh, progress, language)
+            update(1, "從 PDF 辨識原始論文 DOI" if language == "zh-TW" else "Identifying the source DOI from PDF")
+            def lookup_title(value: str) -> str | None:
+                try:
+                    return resolver.source_work(value, force_refresh)[0].title
+                except Exception:
+                    return None
+            doi = verified_seed_doi(pdf_path, lookup_title)
+            if doi:
+                identifier = doi
+            else:
+                for hint in pdf_title_hints(pdf_path):
+                    try:
+                        candidate, _ = resolver.source_work(hint, force_refresh)
+                        if pdf_matches_seed(pdf_path, candidate.title):
+                            identifier = candidate.doi or ""
+                            break
+                    except ValueError:
+                        continue
+                if not identifier:
+                    raise ValueError("Could not verify the source paper from PDF; enter its DOI or title")
+        update(1, "取得 Crossref 原始論文與參考文獻" if language == "zh-TW" else "Fetching source paper and references from Crossref")
+        seed, papers = resolver.source_work(identifier, force_refresh)
+        crossref_papers = papers
+        pdf_references = None
+        extraction = None
+        comparison_error = None
+        if pdf_path is not None:
+            try:
+                if use_grobid:
+                    pdf_seed, pdf_references = self.grobid.process_pdf(pdf_path)
+                    extraction = "grobid"
+                else:
+                    pdf_seed = None
+                    pdf_references = extract_numbered_references(pdf_path)
+                    extraction = "numbered_pdf_text"
+                if pdf_seed and pdf_seed.doi and pdf_seed.doi != seed.doi:
+                    raise ValueError("PDF source DOI differs from the selected Crossref paper")
+                if not pdf_matches_seed(pdf_path, seed.title):
+                    raise ValueError("Could not confirm that this PDF is the selected paper")
+            except Exception as exc:
+                comparison_error = str(exc)
+                pdf_references = None
+                extraction = None
+        reference_source = "crossref"
+        if not papers and pdf_references:
+            papers = pdf_references
+            reference_source = extraction
+        result = self._finish(seed, papers, enabled, force_refresh, progress, language, reference_source)
+        if reference_source == "crossref":
+            result.warnings.insert(0, (
+                "此清單來自出版者提交給 Crossref 的資料，尚未證實與論文 PDF 完全一致；即使有資料也可能缺漏。"
+                if language == "zh-TW" else
+                "This list is publisher-deposited Crossref data, not proven identical to the paper PDF; a nonempty list may still be incomplete."
+            ))
+        else:
+            result.warnings.insert(0, (
+                "Crossref 未提供參考文獻；這份清單從 PDF 抽出，尚未逐項驗證完整性。"
+                if language == "zh-TW" else
+                "Crossref supplied no references; this list was extracted from the PDF and has not been checked item by item for completeness."
+            ))
+        if not crossref_papers:
+            result.provider_states["crossref"] = "no_references"
+        if not crossref_papers and not pdf_references:
+            result.warnings.append(
+                ("Crossref 沒有提供參考文獻清單。請上傳 PDF，以原文抽取參考文獻。" if pdf_path is None else "Crossref 沒有提供參考文獻清單，PDF 也未能抽出可用清單。")
+                if language == "zh-TW" else
+                ("Crossref has no reference list. Upload the PDF to extract references from the source." if pdf_path is None else "Crossref has no reference list, and the PDF did not yield a usable list.")
+            )
+        if pdf_references is not None and crossref_papers:
+            source_dois = {paper.doi for paper in crossref_papers if paper.doi}
+            pdf_dois = {paper.doi for paper in pdf_references if paper.doi}
+            result.stats["pdf_comparison"] = {
+                "extractor": extraction,
+                "pdf_references": len(pdf_references),
+                "pdf_dois": len(pdf_dois),
+                "crossref_dois": len(source_dois),
+                "shared_dois": len(source_dois & pdf_dois),
+                "status": "partial_comparison",
+            }
+            result.warnings.append(
+                "PDF 比對僅涵蓋成功抽出的 DOI，無法證明完整清單或文字逐項一致。"
+                if language == "zh-TW" else
+                "PDF comparison covers extracted DOIs only; it cannot prove complete list or item-by-item text agreement."
+            )
+        elif comparison_error:
+            result.stats["pdf_comparison"] = {"status": "unavailable", "reason": comparison_error}
+            result.warnings.append(
+                f"無法核對 PDF 參考文獻：{comparison_error}" if language == "zh-TW" else f"Could not compare PDF references: {comparison_error}"
+            )
+        return result
+
+    def _finish(
+        self,
+        seed,
+        papers,
+        enabled,
+        force_refresh,
+        progress,
+        language,
+        reference_source,
+    ) -> AnalysisResult:
+        update = progress or (lambda _step, _message: None)
         def message(zh_tw: str, en: str) -> str:
             return zh_tw if language == "zh-TW" else en
 
         states = {provider: "disabled" for provider in ("crossref", "openalex", "semantic_scholar")}
         warnings: list[str] = []
-        logger.info("Analysis started: %s", Path(pdf_path).name)
-
-        update(1, message("使用 GROBID 解析 PDF", "Parsing PDF with GROBID"))
-        seed, papers = self.grobid.process_pdf(pdf_path)
+        logger.info("Analysis started: %s", seed.doi or seed.title)
         logger.info("Extracted %d references", len(papers))
 
         if enabled.get("crossref"):
@@ -80,7 +220,15 @@ class AnalysisPipeline:
             provider = SemanticScholarProvider(self.cache, self.settings.semantic_scholar_api_key)
             try:
                 provider.enrich_with_seed(seed, papers, force_refresh)
-                states["semantic_scholar"] = "success"
+                if provider.partial_errors:
+                    states["semantic_scholar"] = "partial" if any(paper.semantic_scholar_id for paper in papers) else "failed"
+                    detail = provider.partial_errors[0]
+                    warnings.append(message(
+                        f"Semantic Scholar 部分查詢失敗；已保留取得的資料，缺少的語意與影響力指標不計分。（{detail}）",
+                        f"Some Semantic Scholar queries failed; available data was retained, and missing semantic and influential-citation signals were excluded. ({detail})",
+                    ))
+                else:
+                    states["semantic_scholar"] = "success"
             except Exception as exc:
                 states["semantic_scholar"] = "failed"
                 warnings.append(message(f"Semantic Scholar 目前無法使用。語意相關指標已排除。（{exc}）", f"Semantic Scholar is unavailable; semantic metrics were excluded. ({exc})"))
@@ -104,6 +252,8 @@ class AnalysisPipeline:
             )
         )
         stats = {
+            "reference_source": reference_source,
+            "reference_verification": "unverified",
             "references_extracted": len(papers),
             "references_resolved": resolved,
             "resolution_rate": round(100 * resolved / len(papers), 1) if papers else 0.0,

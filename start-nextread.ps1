@@ -6,8 +6,6 @@ param(
 $ErrorActionPreference = "Stop"
 
 $projectPath = $PSScriptRoot
-$dockerDesktopPath = Join-Path $env:LOCALAPPDATA "Programs\DockerDesktop\Docker Desktop.exe"
-$dockerPath = Join-Path $env:LOCALAPPDATA "Programs\DockerDesktop\resources\bin\docker.exe"
 $streamlitPath = Join-Path $projectPath ".venv\Scripts\streamlit.exe"
 $pythonPath = Join-Path $projectPath ".venv\Scripts\python.exe"
 $appUrl = "http://localhost:8501"
@@ -35,53 +33,6 @@ function Test-HttpEndpoint {
     catch {
         return $false
     }
-}
-
-function Invoke-DockerCommand {
-    param(
-        [string]$Arguments,
-        [int]$TimeoutMilliseconds,
-        [string]$LogName
-    )
-
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $dockerPath
-    $startInfo.Arguments = $Arguments
-    $startInfo.WorkingDirectory = $projectPath
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardOutput = $true
-    $startInfo.RedirectStandardError = $true
-
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $startInfo
-    $process.Start() | Out-Null
-    $standardOutput = $process.StandardOutput.ReadToEndAsync()
-    $standardError = $process.StandardError.ReadToEndAsync()
-
-    if (-not $process.WaitForExit($TimeoutMilliseconds)) {
-        $process.Kill()
-        $process.WaitForExit()
-        return 124
-    }
-
-    $standardOutput.Wait()
-    $standardError.Wait()
-    [System.IO.File]::WriteAllText(
-        (Join-Path $logPath "$LogName.out.log"),
-        $standardOutput.Result,
-        [System.Text.UTF8Encoding]::new($true)
-    )
-    [System.IO.File]::WriteAllText(
-        (Join-Path $logPath "$LogName.err.log"),
-        $standardError.Result,
-        [System.Text.UTF8Encoding]::new($true)
-    )
-    return $process.ExitCode
-}
-
-function Test-DockerReady {
-    return (Invoke-DockerCommand "info" 5000 "docker-info") -eq 0
 }
 
 function Stop-ExistingStreamlit {
@@ -116,38 +67,6 @@ function Stop-ExistingStreamlit {
 try {
     Set-Location -LiteralPath $projectPath
     Write-LauncherStatus "正在啟動 NextRead..." Cyan
-
-    if (-not (Test-Path -LiteralPath $dockerPath)) {
-        throw "找不到 Docker 命令列工具：$dockerPath"
-    }
-
-    if (-not (Test-DockerReady)) {
-        if (-not (Test-Path -LiteralPath $dockerDesktopPath)) {
-            throw "找不到 Docker Desktop：$dockerDesktopPath"
-        }
-        Write-LauncherStatus "正在啟動 Docker Desktop，第一次啟動可能需要一分鐘。"
-        Start-Process -FilePath $dockerDesktopPath -WindowStyle Hidden
-        $dockerReady = $false
-        for ($attempt = 0; $attempt -lt 60; $attempt++) {
-            Start-Sleep -Seconds 2
-            if (Test-DockerReady) {
-                $dockerReady = $true
-                break
-            }
-        }
-        if (-not $dockerReady) {
-            throw "Docker Desktop 未能在兩分鐘內啟動。請開啟 Docker Desktop 查看狀態。"
-        }
-    }
-
-    Write-LauncherStatus "正在確認 GROBID 服務..."
-    $composeExitCode = Invoke-DockerCommand "compose up -d grobid" 60000 "docker-compose"
-    if ($composeExitCode -eq 124) {
-        throw "GROBID 啟動逾時。詳細內容已寫入 logs\docker-compose.err.log。"
-    }
-    if ($composeExitCode -ne 0) {
-        throw "GROBID 啟動失敗。詳細內容已寫入 logs\docker-compose.err.log。"
-    }
 
     if (-not (Test-Path -LiteralPath $streamlitPath)) {
         throw "找不到 Streamlit：$streamlitPath"

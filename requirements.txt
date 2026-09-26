@@ -7,5 +7,6 @@ scipy>=1.14,<2
 PyYAML>=6.0,<7
 python-dotenv>=1.0,<2
 rapidfuzz>=3.10,<4
+pypdf>=6.0,<7
 tenacity>=9.0,<10
 pytest>=8.3,<9

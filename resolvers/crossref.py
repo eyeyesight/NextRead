@@ -6,7 +6,7 @@ from typing import Any
 
 from rapidfuzz.fuzz import ratio
 
-from core.models import ReferencePaper
+from core.models import ReferencePaper, SeedPaper
 from parsers.grobid import normalize_doi
 from providers.http import HttpClient
 from storage.cache import ApiCache
@@ -46,6 +46,77 @@ class CrossrefResolver:
         self.cache = cache
         self.mailto = mailto
         self.http = HttpClient()
+
+    def _get_work(self, doi: str, force_refresh: bool = False) -> dict[str, Any]:
+        key = f"work:{doi}"
+        payload = self.cache.get(self.name, key, force_refresh)
+        if payload is None:
+            params = {"mailto": self.mailto} if self.mailto else None
+            payload = self.http.get_json(f"https://api.crossref.org/works/{doi}", params=params)
+            self.cache.set(self.name, key, payload)
+        return payload.get("message", {})
+
+    def source_work(self, identifier: str, force_refresh: bool = False) -> tuple[SeedPaper, list[ReferencePaper]]:
+        """Return publisher-deposited references for a DOI or a strongly matched title."""
+        doi = normalize_doi(identifier)
+        if not doi:
+            title = identifier.strip()
+            if not title:
+                raise ValueError("Enter a DOI or paper title")
+            key = f"source-title:{_normalize(title)}"
+            payload = self.cache.get(self.name, key, force_refresh)
+            if payload is None:
+                params: dict[str, str | int] = {"query.title": title, "rows": 5}
+                if self.mailto:
+                    params["mailto"] = self.mailto
+                payload = self.http.get_json("https://api.crossref.org/works", params=params)
+                self.cache.set(self.name, key, payload)
+            matches = payload.get("message", {}).get("items", [])
+            matches = list({normalize_doi(item.get("DOI")): item for item in matches if normalize_doi(item.get("DOI"))}.values())
+            if not matches:
+                raise ValueError("No Crossref paper found for that title")
+            scored = sorted(
+                ((ratio(_normalize(title), _normalize((item.get("title") or [""])[0])), item) for item in matches),
+                key=lambda pair: pair[0], reverse=True,
+            )
+            if scored[0][0] < 90:
+                raise ValueError("No sufficiently close Crossref title match; enter a DOI")
+            if len(scored) > 1 and scored[1][0] >= 90 and scored[0][0] - scored[1][0] < 3:
+                raise ValueError("Several Crossref papers match this title; enter the source DOI")
+            candidate = scored[0][1]
+            doi = normalize_doi(candidate["DOI"])
+        if not doi:
+            raise ValueError("Invalid DOI")
+        work = self._get_work(doi, force_refresh)
+        title = (work.get("title") or [None])[0]
+        date_parts = (work.get("published") or work.get("issued") or {}).get("date-parts") or []
+        year = date_parts[0][0] if date_parts and date_parts[0] else None
+        seed = SeedPaper(
+            title=title,
+            doi=doi,
+            authors=[" ".join(filter(None, (author.get("given"), author.get("family")))) for author in work.get("author", [])],
+            year=year,
+            abstract=work.get("abstract"),
+        )
+        references = []
+        for item in work.get("reference") or []:
+            raw = item.get("unstructured") or " ".join(str(item[key]) for key in (
+                "author", "year", "article-title", "volume-title", "journal-title", "volume", "first-page", "DOI"
+            ) if item.get(key))
+            reference_doi = normalize_doi(item.get("DOI"))
+            references.append(ReferencePaper(
+                raw_reference=raw,
+                title=item.get("article-title") or item.get("volume-title"),
+                doi=reference_doi,
+                year=int(item["year"]) if str(item.get("year", "")).isdigit() else None,
+                authors=[item["author"]] if item.get("author") else [],
+                source_name=item.get("journal-title"),
+                volume=item.get("volume"),
+                pages=item.get("first-page"),
+                resolution_status="exact_doi" if reference_doi else "unresolved",
+                resolution_confidence=1.0 if reference_doi else None,
+            ))
+        return seed, references
 
     def resolve(self, paper: ReferencePaper, force_refresh: bool = False) -> ReferencePaper:
         if paper.doi:

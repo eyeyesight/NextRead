@@ -13,6 +13,7 @@ import streamlit as st
 from core.config import load_settings
 from core.models import AnalysisResult, ReferencePaper
 from core.pipeline import AnalysisPipeline
+from parsers.grobid_service import GrobidUnavailableError, check_grobid_ready
 
 
 LEGACY_FIELD_ALIASES = {
@@ -54,6 +55,17 @@ language = "zh-TW" if language_choice == "繁體中文" else "en"
 
 def t(zh: str, en: str) -> str:
     return zh if language == "zh-TW" else en
+
+
+def api_key_status(configured: bool, enabled: bool) -> str:
+    if not enabled:
+        return t("已載入；本次未啟用" if configured else "未設定；本次未啟用", "Loaded; not enabled for this analysis" if configured else "Not set; not enabled for this analysis")
+    return t("已載入；新請求會使用" if configured else "未設定；使用公開額度", "Loaded; used for new requests" if configured else "Not set; using public access")
+
+
+def request_grobid_recheck() -> None:
+    st.session_state["grobid_check_done"] = False
+    st.session_state["grobid_recheck_requested"] = True
 
 
 def svg_mask(path: Path) -> str:
@@ -532,7 +544,7 @@ with actions:
 language = "zh-TW" if language_choice == "繁體中文" else "en"
 with head:
     st.title("NextRead")
-st.write(t("上傳學術 PDF，辨識參考文獻、顯示 SJR 期刊分區，並排出建議閱讀順序。", "Upload an academic PDF to identify references, show SJR journal quartiles, and rank the reading order."))
+st.write(t("輸入論文 DOI 或標題即可快速推薦；也可上傳 PDF 抽取或比對參考文獻。", "Enter a paper DOI or title for fast recommendations; optionally upload a PDF to extract or compare references."))
 st.info(t(
     "Reading Priority 決定本次參考文獻清單的閱讀順序，可搭配 SJR Quartile 快速查看期刊在所屬學科中的位置，再查閱 Local PageRank、Semantic Similarity、FWCI 等指標參考一篇文獻為何值得優先閱讀。",
     "Reading Priority determines the reading order for this reference list. Use SJR Quartile to quickly see a journal's standing within its subject category, then consult Local PageRank, Semantic Similarity, FWCI, and other metrics to understand why a paper may deserve priority.",
@@ -548,17 +560,65 @@ update_message = st.session_state.pop("sjr_update_message", None)
 if update_message:
     st.success(update_message)
 
-uploaded = st.file_uploader(t("上傳 PDF", "Upload PDF"), type=["pdf"])
+identifier = st.text_input(t("原始論文 DOI 或標題", "Source paper DOI or title"), placeholder="10.1234/example or paper title")
+uploaded = st.file_uploader(t("選擇 PDF（選填）", "Select PDF (optional)"), type=["pdf"])
 if uploaded:
     st.caption(f"{uploaded.name} · {uploaded.size / 1024 / 1024:.2f} MB")
 mode = st.radio(t("分析模式", "Analysis mode"), list(MODES), index=1, horizontal=True, format_func=lambda x: t(*MODE_TEXT[x][0]))
 st.caption(t(*MODE_TEXT[mode][1]))
 defaults = MODES[mode]
+grobid_status_note = None
 with st.expander(t("進階設定", "Advanced settings")):
-    crossref = st.checkbox("Crossref", value=defaults["crossref"])
+    use_grobid = st.checkbox(t("使用 GROBID 解析 PDF", "Use GROBID to parse PDF"), value=False)
+    st.caption(t(
+        "GROBID 是選用功能：不用 Docker 也能快速推薦；若想從 PDF 盡量擷取與原文相符的完整參考文獻，建議使用 GROBID。抽取結果仍需核對原文。",
+        "GROBID is optional: fast recommendations work without Docker. For the most complete PDF-derived reference list, we recommend GROBID. Verify extracted references against the paper.",
+    ))
+    if use_grobid:
+        st.caption(t("請先自行啟動 Docker Desktop，再於專案資料夾執行 `docker compose up -d grobid`。NextRead 只檢查服務，不會替你啟動。", "Start Docker Desktop yourself, then run `docker compose up -d grobid` in the project folder. NextRead checks the service but does not start it."))
+        if not st.session_state.get("grobid_check_done"):
+            st.session_state["grobid_check_done"] = True
+            rechecking = st.session_state.pop("grobid_recheck_requested", False)
+            try:
+                if rechecking:
+                    with st.status(t("正在重新檢查 GROBID…", "Rechecking GROBID…"), expanded=True) as status:
+                        progress_line = status.empty()
+                        def report_retry(attempt: int) -> None:
+                            progress_line.write(t(
+                                f"容器已啟動；API 尚未回應，正在等待後重試（{attempt}/5）。",
+                                f"Container is running; waiting for its API before retrying ({attempt}/5).",
+                            ))
+                        try:
+                            check_grobid_ready(pipeline.grobid, APP_DIR, api_attempts=6, on_retry=report_retry)
+                        except GrobidUnavailableError:
+                            status.update(label=t("本次檢查完成：GROBID 仍未就緒", "Check complete: GROBID is not ready"), state="error")
+                            raise
+                        status.update(label=t("本次檢查完成：GROBID 已就緒", "Check complete: GROBID is ready"), state="complete", expanded=False)
+                else:
+                    with st.spinner(t("正在檢查 Docker 與 GROBID…", "Checking Docker and GROBID…")):
+                        check_grobid_ready(pipeline.grobid, APP_DIR)
+                st.session_state.pop("grobid_check_error", None)
+            except GrobidUnavailableError as exc:
+                st.session_state["grobid_check_error"] = str(exc)
+        grobid_status_note = st.empty()
+        if error := st.session_state.get("grobid_check_error"):
+            grobid_status_note.warning(t(f"GROBID 尚未就緒：{error}", f"GROBID is not ready: {error}"))
+        else:
+            grobid_status_note.success(t("Docker 與 GROBID 已就緒。", "Docker and GROBID are ready."))
+        st.button(t("重新檢查 GROBID", "Recheck GROBID"), on_click=request_grobid_recheck)
+    else:
+        st.session_state.pop("grobid_check_done", None)
+        st.session_state.pop("grobid_check_error", None)
+        st.session_state.pop("grobid_recheck_requested", None)
+    crossref = st.checkbox(t("Crossref 逐筆書目辨識", "Crossref per-reference lookup"), value=defaults["crossref"])
+    st.caption(t("DOI／標題入口始終使用 Crossref 查找原始論文與出版者提交清單；此選項只控制後續逐筆補充。", "The DOI/title entry always uses Crossref for the source paper and publisher-deposited list; this option controls subsequent per-reference lookup only."))
     openalex = st.checkbox("OpenAlex", value=defaults["openalex"])
     semantic_scholar = st.checkbox("Semantic Scholar", value=defaults["semantic_scholar"])
-    force_refresh = st.checkbox(t("強制重新取得 API 資料", "Refresh API data"))
+    force_refresh = st.checkbox(t("重新查詢外部 API（不使用快取）", "Re-query external APIs (skip cache)"))
+    st.caption(t(
+        "平常會重用本機快取以加快分析。勾選後，本次分析會略過現有的 Crossref、OpenAlex、Semantic Scholar 快取，重新查詢已啟用的服務並更新快取；可能更慢，也會消耗 API 額度。",
+        "Normally, cached API responses speed up analysis. This option skips existing Crossref, OpenAlex, and Semantic Scholar cache entries for this run, re-queries enabled services, and updates the cache. It may be slower and use API quota.",
+    ))
     st.divider()
     st.markdown(f"### {t('手動更新 SJR 資料', 'Manually update SJR data')}")
     current_sjr = t(
@@ -595,30 +655,51 @@ with st.expander(t("進階設定", "Advanced settings")):
 
 st.subheader(t("服務狀態", "Service status"))
 cols = st.columns(6)
-cols[0].metric("GROBID", t("已連線", "Online") if pipeline.grobid.is_available() else t("未啟動", "Offline"))
-cols[1].metric("Crossref", t("已啟用", "Enabled") if crossref else t("未啟用", "Disabled"))
+grobid_metric = cols[0].empty()
+grobid_metric.metric("GROBID", (t("已就緒", "Ready") if not st.session_state.get("grobid_check_error") else t("未就緒", "Not ready")) if use_grobid else t("未選用", "Not selected"))
+cols[1].metric(t("Crossref 逐筆查詢", "Crossref per-reference"), t("已啟用", "Enabled") if crossref else t("未啟用", "Disabled"))
 cols[2].metric("OpenAlex", t("已啟用", "Enabled") if openalex else t("未啟用", "Disabled"))
 cols[3].metric("Semantic Scholar", t("未啟用", "Disabled") if not semantic_scholar else t("已啟用", "Enabled"))
 cols[4].metric("SJR", str(pipeline.sjr.year or t("已載入", "Loaded")) if pipeline.sjr.available else t("無資料", "No data"))
 cols[5].metric("Scite", t("尚未實作", "Not implemented"))
+openalex_key_status = api_key_status(bool(settings.openalex_api_key), openalex)
+semantic_key_status = api_key_status(bool(settings.semantic_scholar_api_key), semantic_scholar)
+st.caption(t(
+    f"OpenAlex API Key：{openalex_key_status}；Semantic Scholar API Key：{semantic_key_status}。此處只顯示設定是否載入，不驗證 Key 有效性；若命中快取就不會發出新請求。",
+    f"OpenAlex API Key: {openalex_key_status}; Semantic Scholar API Key: {semantic_key_status}. This shows whether keys were loaded, not whether they are valid. Cached results make no new API request.",
+))
 
-if st.button(t("開始分析", "Start analysis"), type="primary", disabled=uploaded is None):
-    if not pipeline.grobid.is_available():
-        st.error(t("GROBID 尚未啟動。請先執行 `docker compose up -d grobid`。", "GROBID is offline. Run `docker compose up -d grobid`."))
-    else:
-        bar, text = st.progress(0), st.empty()
-        def update(step: int, message: str) -> None:
-            bar.progress(step / 7); text.write(f"{step}. {message}")
-        try:
+if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (identifier.strip() or uploaded)):
+    bar, text = st.progress(0), st.empty()
+    def update(step: int, message: str) -> None:
+        bar.progress(step / 7); text.write(f"{step}. {message}")
+    path = None
+    try:
+        if use_grobid and uploaded:
+            with st.spinner(t("正在確認 GROBID 服務…", "Checking GROBID service…")):
+                check_grobid_ready(pipeline.grobid, APP_DIR)
+            st.session_state.pop("grobid_check_error", None)
+            grobid_status_note.success(t("Docker 與 GROBID 已就緒。", "Docker and GROBID are ready."))
+            grobid_metric.metric("GROBID", t("已就緒", "Ready"))
+        if uploaded:
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp:
                 temp.write(uploaded.getbuffer()); path = Path(temp.name)
-            try:
-                st.session_state["result"] = pipeline.analyze(path, {"crossref": crossref, "openalex": openalex, "semantic_scholar": semantic_scholar}, force_refresh, update, language)
-            finally:
-                path.unlink(missing_ok=True)
-            bar.progress(1.0); text.write(t("分析完成", "Analysis complete"))
-        except Exception as exc:
-            logging.exception("Analysis failed"); st.error(t(f"PDF 無法完成分析：{exc}", f"The PDF could not be analyzed: {exc}"))
+        st.session_state["result"] = pipeline.analyze_identifier(
+            identifier.strip(),
+            {"crossref": crossref, "openalex": openalex, "semantic_scholar": semantic_scholar},
+            path, force_refresh, update, language, use_grobid,
+        )
+        bar.progress(1.0); text.write(t("分析完成", "Analysis complete"))
+    except GrobidUnavailableError as exc:
+        st.session_state["grobid_check_error"] = str(exc)
+        grobid_status_note.warning(t(f"GROBID 尚未就緒：{exc}", f"GROBID is not ready: {exc}"))
+        grobid_metric.metric("GROBID", t("未就緒", "Not ready"))
+        st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
+    except Exception as exc:
+        logging.exception("Analysis failed"); st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
+    finally:
+        if path:
+            path.unlink(missing_ok=True)
 
 result: AnalysisResult | None = st.session_state.get("result")
 if result:
@@ -629,6 +710,17 @@ if result:
             "This result was saved before the scoring update. Existing metrics remain visible; run the analysis again to obtain the revised influential-citation and author metrics.",
         ))
     st.write(f"**{t('原始論文', 'Seed paper')}：** {result.seed.title or t('無法取得標題', 'Title unavailable')}")
+    source = result.stats.get("reference_source")
+    if source == "crossref":
+        st.info(t("參考文獻來源：Crossref 出版者提交資料；尚未與原文完整核對，清單可能缺漏。", "Reference source: publisher-deposited Crossref data; not fully checked against the paper, and the list may be incomplete."))
+    elif source:
+        st.info(t(f"參考文獻來源：PDF（{source} 抽取）；尚未確認逐項完整。", f"Reference source: PDF ({source} extraction); item-by-item completeness is unverified."))
+    comparison = result.stats.get("pdf_comparison")
+    if comparison and comparison.get("status") == "partial_comparison":
+        st.caption(t(
+            f"PDF 與 Crossref DOI 局部比對：PDF 抽出 {comparison['pdf_references']} 筆，其中 {comparison['pdf_dois']} 筆有 DOI；Crossref {comparison['crossref_dois']} 筆有 DOI，重疊 {comparison['shared_dois']} 筆，PDF 獨有 {comparison['pdf_dois'] - comparison['shared_dois']} 筆，Crossref 獨有 {comparison['crossref_dois'] - comparison['shared_dois']} 筆。這不是全文一致性驗證。",
+            f"Partial PDF–Crossref DOI comparison: {comparison['pdf_references']} PDF items, {comparison['pdf_dois']} with DOI; {comparison['crossref_dois']} Crossref DOIs, {comparison['shared_dois']} shared, {comparison['pdf_dois'] - comparison['shared_dois']} PDF only, {comparison['crossref_dois'] - comparison['shared_dois']} Crossref only. This does not verify full-text agreement.",
+        ))
     summary = st.columns(6)
     summary[0].metric(t("參考文獻", "References"), result.stats["references_extracted"])
     summary[1].metric(t("成功辨識", "Resolved"), result.stats["references_resolved"], f"{result.stats['resolution_rate']}%")
@@ -666,6 +758,8 @@ if result:
     export_rows = []
     for paper in result.references:
         row = paper.to_dict()
+        row["reference_source"] = result.stats.get("reference_source", "unknown")
+        row["source_list_verified_against_pdf"] = False
         for field in ("authors", "author_h_indices", "other_topics", "referenced_works", "source_issns"):
             row[field] = "; ".join(str(value) for value in row.get(field, []))
         row.pop("embedding", None); row.pop("provider_data", None); export_rows.append(row)

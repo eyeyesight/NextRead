@@ -20,7 +20,8 @@ class SemanticScholarProvider(DataProvider):
         headers = {"x-api-key": api_key} if api_key else {}
         self.cache = cache
         self.api_key = api_key
-        self.http = HttpClient(headers=headers)
+        self.http = HttpClient(headers=headers, min_interval=1.1)
+        self.partial_errors: list[str] = []
 
     def is_available(self) -> bool:
         return True
@@ -32,6 +33,7 @@ class SemanticScholarProvider(DataProvider):
         self.enrich_with_seed(None, papers, force_refresh)
 
     def enrich_with_seed(self, seed: SeedPaper | None, papers: list[ReferencePaper], force_refresh: bool = False) -> None:
+        self.partial_errors = []
         doi_targets = ([seed.doi] if seed and seed.doi else []) + [paper.doi for paper in papers if paper.doi]
         unique_dois = list(dict.fromkeys(doi for doi in doi_targets if doi))
         records: dict[str, dict] = {}
@@ -61,14 +63,23 @@ class SemanticScholarProvider(DataProvider):
                     for doi in chunk:
                         self.cache.set(self.name, f"doi:{doi}", {})
                     continue
-                raise
+                self.partial_errors.append(str(exc))
+                break
+            except requests.RequestException as exc:
+                self.partial_errors.append(str(exc))
+                break
             for doi, record in zip(chunk, response):
                 if record:
                     records[doi] = record
                     self.cache.set(self.name, f"doi:{doi}", record)
         seed_embedding = self._embedding(records.get(seed.doi)) if seed and seed.doi else None
         seed_record = records.get(seed.doi) if seed and seed.doi else None
-        influential_edges = self._influential_edges(seed_record, force_refresh)
+        influential_edges = {}
+        if not self.partial_errors:
+            try:
+                influential_edges = self._influential_edges(seed_record, force_refresh)
+            except requests.RequestException as exc:
+                self.partial_errors.append(str(exc))
         for paper in papers:
             record = records.get(paper.doi or "")
             if not record:

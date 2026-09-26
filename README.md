@@ -2,7 +2,7 @@
 
 **[操作 Demo](DEMO.md)** · **[安裝與啟動](#windows-安裝與啟動)** · **[計分方式](#scoring-methodology)**
 
-NextRead 是一套本機 Streamlit 工具，系統從一份學術 PDF 擷取 references、補充書目與學術指標、建立局部引用網路，並產生建議閱讀順序。
+NextRead 是一套本機 Streamlit 工具。輸入論文 DOI 或標題即可從 Crossref 取得出版者提交的 references，補充學術指標並產生建議閱讀順序。PDF 可用於抽取或局部比對參考文獻。**Docker 完全選用**：不用安裝也能快速推薦；若要盡量取得與原論文相符的完整參考文獻，建議上傳 PDF 並選用由 Docker 執行的 GROBID。任何自動抽取結果仍需與原文核對。
 
 Reading Priority 回答一個具體問題：
 
@@ -12,8 +12,8 @@ Reading Priority 回答一個具體問題：
 
 ## 功能
 
-- 使用 GROBID 擷取 seed paper 與完整 reference list
-- 使用 Crossref 補充 DOI 與標準化書目資料
+- 使用 Crossref 取得原始論文及出版者提交的 reference list；此清單可能缺漏，不能視為與 PDF 完全一致
+- 選擇性上傳 PDF，以文字抽取辨識原始 DOI 或局部比對 DOI；GROBID 可在進階設定中選用
 - 使用 OpenAlex 取得 field-normalized impact、作者、來源與主題資料
 - 使用 reference set 內部的 citation links 計算 Local PageRank、Local In-Degree 與 Local Connectivity
 - 使用 Semantic Scholar SPECTER2 embeddings 計算語意相似度
@@ -24,7 +24,7 @@ Reading Priority 回答一個具體問題：
 
 ## 專案定位與平台支援
 
-NextRead 目前是從原始碼執行的本機應用程式，不是已封裝的 Windows 安裝程式或單一執行檔，第一次使用前仍需安裝 Python、Docker 與 Python dependencies，熟悉終端機的使用者可以依照以下步驟自行完成，若不熟悉開發環境，也可以交由 coding agent 協助架設。
+NextRead 目前是從原始碼執行的本機應用程式，不是已封裝的 Windows 安裝程式或單一執行檔。第一次使用前需安裝 Python 與 Python dependencies；只有選用 GROBID PDF 解析時才需要 Docker。
 
 | 平台 | 支援狀態 |
 |---|---|
@@ -40,7 +40,7 @@ macOS 與 Linux 採 best-effort 支援，本專案不承諾持續維護各平台
 
 - [Git](https://git-scm.com/download/win)
 - Python 3.11 以上
-- Docker Desktop，並啟用 Docker Compose
+- Docker Desktop 與 Docker Compose（僅選用 GROBID 時需要）
 
 ### 1. 下載專案
 
@@ -67,20 +67,30 @@ API Key 均為選填，未設定時系統會嘗試使用各服務的公開存取
 
 ### 4. 啟動 NextRead
 
-完成初次安裝後，可以直接執行 `start-nextread.cmd`，這是原始開發環境使用的便利啟動器，不是安裝程式，它會尋找使用者層級安裝的 Docker Desktop、啟動 GROBID、重新啟動 NextRead、等待服務完成，並在預設瀏覽器開啟 <http://localhost:8501>。
+完成初次安裝後，可以直接執行 `start-nextread.cmd`。它只會啟動 NextRead 並在預設瀏覽器開啟 <http://localhost:8501>，不會啟動 Docker。若要使用 GROBID，請先自行啟動 Docker Desktop，再於本專案資料夾手動執行 `docker compose up -d grobid`。在介面的進階設定勾選「使用 GROBID 解析 PDF」時，NextRead 只會檢查 Docker 引擎、GROBID 容器與 API 是否就緒；未就緒時會顯示原因，待手動處理後可按「重新檢查 GROBID」。新的 Docker Compose 專案固定命名為 `nextread`（Compose 不接受大寫），容器通常顯示為 `nextread-grobid-1`，不再跟隨專案資料夾名稱。
 
-若 Docker Desktop 安裝在其他位置，或啟動器無法找到 Docker，可以在 PowerShell 中手動執行：
+#### 已安裝舊版 GROBID 的使用者
+
+先前從 `AcademicReferences` 資料夾啟動的容器通常屬於 `academicreferences` 專案。更新程式碼後，舊容器**不會自動改名、停止或刪除**；NextRead 仍可辨識並使用執行中的舊容器。如果要改用新名稱，請先確認舊專案名稱（`docker compose ls`），再於本專案資料夾執行：
 
 ```powershell
+docker compose -p academicreferences stop grobid
 docker compose up -d grobid
+```
+
+這只會停止舊 GROBID 容器並以 `nextread` 專案啟動新容器；不會執行 `down` 或刪除舊容器。若舊專案名稱不是 `academicreferences`，請將第一行的名稱換成 `docker compose ls` 顯示的值。請勿在舊容器仍占用 8070 埠時直接啟動新容器。
+
+也可以在 PowerShell 中手動執行：
+
+```powershell
 .\.venv\Scripts\streamlit.exe run app.py
 ```
 
-GROBID 首次啟動可能需要一至兩分鐘。
+若使用自訂 `GROBID_URL`，請自行啟動對應服務；NextRead 只檢查該服務的 API，不會啟動 Docker 或容器。
 
 ## macOS 與 Linux 手動啟動
 
-macOS 需要 Docker Desktop，Linux 需要 Docker Engine 與 Docker Compose plugin，接著可以使用下列流程：
+macOS 與 Linux 可以使用下列流程；只有 GROBID 需要 Docker 與 Compose：
 
 ```bash
 git clone https://github.com/eyeyesight/NextRead.git
@@ -90,7 +100,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 nano .env
-docker compose up -d grobid
 streamlit run app.py
 ```
 
@@ -99,11 +108,11 @@ streamlit run app.py
 ## 分析流程
 
 ```text
-Academic PDF
+Paper DOI or title
     ↓
-GROBID reference extraction
+Crossref publisher-deposited references
     ↓
-Crossref bibliographic resolution
+Optional PDF DOI comparison or PDF reference extraction
     ↓
 OpenAlex bibliometrics and local citation graph
     ↓
@@ -118,7 +127,7 @@ Reading Priority and Evidence Coverage
 
 | 模式 | 內容 |
 |---|---|
-| 僅解析 | 使用 GROBID 擷取 references，不查詢外部指標 |
+| 僅解析 | 取得 Crossref references 或解析 PDF，不查詢外部指標 |
 | 標準分析 | 加入 Crossref、OpenAlex、SJR 與局部引用網路 |
 | 完整分析 | 加入 Semantic Scholar 語意相似度與具影響力引用關係 |
 
@@ -261,7 +270,7 @@ GROBID_URL=http://localhost:8070
 
 儲存 `.env` 後重新啟動 NextRead，不要將 `.env`、API Key 或其他憑證提交到 Git。
 
-API 回應預設快取 30 天，`data/cache.db` 保存快取內容，分析頁面的「強制重新取得 API 資料」可略過現有快取。
+API 回應預設快取 30 天，`data/cache.db` 保存快取內容。分析頁面的「重新查詢外部 API（不使用快取）」只影響該次分析：略過現有 Crossref、OpenAlex、Semantic Scholar 回應，向已啟用的服務重新查詢並更新快取；可能較慢，也會消耗 API 額度，不會清空整個快取。畫面會顯示 OpenAlex 與 Semantic Scholar API Key 是否已載入、對應服務本次是否啟用；不會顯示 Key 值，也不會宣稱已驗證 Key 有效。命中快取時不會向 API 發送新請求，因此也不會在該次使用 Key。
 
 ## 開發與驗證
 

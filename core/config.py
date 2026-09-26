@@ -45,8 +45,8 @@ def load_settings(path: str | Path = "config/settings.yaml") -> Settings:
     return Settings(
         grobid_url=os.getenv("GROBID_URL", "http://localhost:8070").rstrip("/"),
         crossref_mailto=os.getenv("CROSSREF_MAILTO", ""),
-        openalex_api_key=os.getenv("OPENALEX_API_KEY", ""),
-        semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY", ""),
+        openalex_api_key=os.getenv("OPENALEX_API_KEY", "").strip(),
+        semantic_scholar_api_key=os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip(),
         sjr_data_path=Path(os.getenv("SJR_DATA_PATH", "data/sjr/scimagojr 2024.csv")),
         cache_enabled=bool(cache.get("enabled", True)),
         cache_ttl_days=int(cache.get("ttl_days", 30)),
