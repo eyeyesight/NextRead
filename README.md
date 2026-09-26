@@ -63,9 +63,21 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-API Key 都是選填；未設定時，系統會嘗試使用各服務的公開額度。申請方式與欄位用途請見「API 與本機設定」。
+API Key 都是選填；未設定時，系統會嘗試使用各服務的公開額度。`.env` 不會上傳 GitHub，換電腦後須重新建立，不能把私人 Key 寫進 `.env.example`。申請方式與欄位用途請見「API 與本機設定」。
 
-### 4. 啟動 NextRead
+### 4. 檢查新電腦的設定與連線
+
+安裝依賴套件並建立 `.env` 後，在專案資料夾執行：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.check_setup
+```
+
+檢查會顯示 OpenAlex、Semantic Scholar 的 Key 是否載入、SJR 資料是否安裝，以及執行 NextRead 的 Python 能否連上 Crossref、OpenAlex 和 Semantic Scholar；它不會印出 Key 值。Key「已載入」不等於有效，服務回應 401／403 才需要檢查授權，429 則表示額度或節流問題。如果出現 Windows 拒絕連線（`WinError 10013`），請檢查該電腦對 `.venv\Scripts\python.exe` 的防火牆、防毒軟體或代理伺服器設定；補上 API Key 無法解除本機的 socket 權限限制。不要為了測試而關閉整台電腦的防火牆。
+
+SJR CSV 也不隨 GitHub 專案下載，檢查顯示「未安裝」時，請依[「SJR 資料」](#sjr-資料)下載並匯入。缺少 Key 或 SJR 檔案不會阻止介面啟動，但相關指標可能無法取得；外部 API 不可用時也無法保證完整分析。
+
+### 5. 啟動 NextRead
 
 完成初次安裝後，執行 `start-nextread.cmd` 即可啟動 NextRead，並在預設瀏覽器開啟 <http://localhost:8501>。啟動器不會開啟 Docker。若要使用 GROBID，請自行開啟 Docker Desktop，並在專案資料夾執行 `docker compose up -d grobid`。勾選介面中的「使用 GROBID 解析 PDF」時，NextRead 只會檢查 Docker、GROBID 容器和 API 是否就緒；若尚未就緒，處理畫面提示的問題後，可按「重新檢查 GROBID」。Docker Compose 專案名稱固定為 `nextread`（Compose 不接受大寫），容器通常名為 `nextread-grobid-1`，不再隨資料夾名稱變動。
 
@@ -100,6 +112,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 nano .env
+python -m scripts.check_setup
 streamlit run app.py
 ```
 
@@ -270,7 +283,7 @@ GROBID_URL=http://localhost:8070
 
 儲存 `.env` 後重新啟動 NextRead，不要將 `.env`、API Key 或其他憑證提交到 Git。
 
-API 回應預設快取 30 天，內容保存在 `data/cache.db`。「重新查詢外部 API（不使用快取）」只影響這次分析：略過現有的 Crossref、OpenAlex 和 Semantic Scholar 快取，重新查詢已啟用的服務並更新快取。查詢可能較慢，也會消耗 API 額度；原有快取不會整批清除。畫面會顯示 OpenAlex 與 Semantic Scholar 是否啟用，以及各自的 API Key 是否載入，但不會顯示 Key 值。顯示「API Key 已載入」不代表 Key 已驗證有效；服務未啟用或結果命中快取時，也不會使用該 Key 發出新請求。
+API 回應預設快取 30 天，內容保存在 `data/cache.db`。「重新查詢外部 API（不使用快取）」只影響這次分析：略過現有的 Crossref、OpenAlex 和 Semantic Scholar 快取，重新查詢已啟用的服務並更新快取。查詢可能較慢，也會消耗 API 額度；原有快取不會整批清除。畫面會顯示 OpenAlex 與 Semantic Scholar 是否啟用，以及各自的 API Key 是否載入，但不會顯示 Key 值。顯示「API Key 已載入」不代表 Key 已驗證有效；服務未啟用或結果命中快取時，也不會使用該 Key 發出新請求。Semantic Scholar 使用 `x-api-key` HTTP 標頭，不需額外執行授權流程；金鑰只存在各電腦自己的 `.env` 中，不會隨 GitHub 複製。
 
 ## 開發與驗證
 

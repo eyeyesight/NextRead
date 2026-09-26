@@ -1,6 +1,7 @@
 from core.config import Settings
 from core.models import ReferencePaper, SeedPaper
 from core.pipeline import AnalysisPipeline
+from providers.http import NetworkAccessError
 
 
 class FakeGrobid:
@@ -54,3 +55,37 @@ def test_semantic_scholar_partial_failure_keeps_cached_coverage(tmp_path, monkey
     assert result.references[0].semantic_relevance_score == 1.0
     assert result.references[0].priority_score is not None
     assert "已取得的資料仍會保留" in result.warnings[0]
+
+
+def test_all_openalex_failures_explain_windows_network_refusal(tmp_path, monkeypatch):
+    class BlockedOpenAlex:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def enrich(self, papers, _force_refresh):
+            papers[0].provider_data["openalex_error"] = "Windows 拒絕 NextRead 連線到 OpenAlex。"
+
+    monkeypatch.setattr("core.pipeline.OpenAlexProvider", BlockedOpenAlex)
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    pipeline.grobid = FakeGrobid()
+
+    result = pipeline.analyze(tmp_path / "paper.pdf", {"crossref": False, "openalex": True, "semantic_scholar": False})
+
+    assert any("Windows 拒絕 NextRead 連線到 OpenAlex" in warning for warning in result.warnings)
+
+
+def test_all_crossref_failures_explain_windows_network_refusal(tmp_path, monkeypatch):
+    class BlockedCrossref:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def resolve(self, _paper, _force_refresh):
+            raise NetworkAccessError("Windows 拒絕 NextRead 連線到 Crossref。")
+
+    monkeypatch.setattr("core.pipeline.CrossrefResolver", BlockedCrossref)
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    pipeline.grobid = FakeGrobid()
+
+    result = pipeline.analyze(tmp_path / "paper.pdf", {"crossref": True, "openalex": False, "semantic_scholar": False})
+
+    assert any("Windows 拒絕 NextRead 連線到 Crossref" in warning for warning in result.warnings)

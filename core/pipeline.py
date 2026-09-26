@@ -181,6 +181,13 @@ class AnalysisPipeline:
         def message(zh_tw: str, en: str) -> str:
             return zh_tw if language == "zh-TW" else en
 
+        def network_hint(error_key: str) -> str:
+            for paper in papers:
+                detail = str(paper.provider_data.get(error_key, ""))
+                if detail.startswith("Windows 拒絕 NextRead"):
+                    return f" {detail}" if language == "zh-TW" else " Windows denied Python network access; check firewall, proxy, or antivirus settings."
+            return ""
+
         states = {provider: "disabled" for provider in ("crossref", "openalex", "semantic_scholar")}
         warnings: list[str] = []
         logger.info("Analysis started: %s", seed.doi or seed.title)
@@ -199,7 +206,7 @@ class AnalysisPipeline:
                     paper.provider_data["crossref_error"] = str(exc)
             if failures:
                 states["crossref"] = "partial" if failures < len(papers) else "failed"
-                warnings.append(message(f"Crossref 有 {failures} 篇參考文獻查詢失敗；未辨識的項目仍保留在清單中。", f"Crossref failed for {failures} references; unresolved items were retained."))
+                warnings.append(message(f"Crossref 有 {failures} 篇參考文獻查詢失敗；未辨識的項目仍保留在清單中。", f"Crossref failed for {failures} references; unresolved items were retained.") + network_hint("crossref_error"))
 
         if enabled.get("openalex"):
             update(4, message("正在取得 OpenAlex 學術指標", "Fetching OpenAlex metrics"))
@@ -210,7 +217,7 @@ class AnalysisPipeline:
                 attempted = sum(bool(paper.doi) for paper in papers)
                 states["openalex"] = "partial" if failures else "success"
                 if failures:
-                    warnings.append(message(f"{attempted} 篇有 DOI 的文獻中，有 {failures} 篇未能從 OpenAlex 取得資料。", f"OpenAlex failed for {failures} of {attempted} references with a DOI."))
+                    warnings.append(message(f"{attempted} 篇有 DOI 的文獻中，有 {failures} 篇未能從 OpenAlex 取得資料。", f"OpenAlex failed for {failures} of {attempted} references with a DOI.") + network_hint("openalex_error"))
             except Exception as exc:
                 states["openalex"] = "failed"
                 warnings.append(message(f"目前無法取得 OpenAlex 資料；排名會使用其他已取得的資料。（{exc}）", f"OpenAlex is unavailable; ranking uses the remaining data. ({exc})"))

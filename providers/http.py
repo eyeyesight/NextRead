@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import requests
 import time
+from urllib.parse import urlsplit
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 
 class RateLimitedError(requests.RequestException):
+    pass
+
+
+class NetworkAccessError(requests.RequestException):
     pass
 
 
@@ -26,6 +31,22 @@ class HttpClient:
             time.sleep(max(0, self.min_interval - (now - self.last_request_at)))
         self.last_request_at = time.monotonic()
 
+    def _request(self, method: str, url: str, **kwargs):
+        try:
+            return getattr(self.session, method)(url, timeout=self.timeout, **kwargs)
+        except requests.ConnectionError as exc:
+            if "WinError 10013" not in str(exc):
+                raise
+            host = urlsplit(url).hostname or "外部服務"
+            service = {
+                "api.crossref.org": "Crossref",
+                "api.openalex.org": "OpenAlex",
+                "api.semanticscholar.org": "Semantic Scholar",
+            }.get(host, host)
+            raise NetworkAccessError(
+                f"Windows 拒絕 NextRead 連線到 {service}；請檢查防火牆、代理伺服器或防毒軟體的 Python 網路權限。"
+            ) from exc
+
     @retry(
         retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, RateLimitedError)),
         stop=stop_after_attempt(3),
@@ -35,7 +56,7 @@ class HttpClient:
     def get_json(self, url: str, **kwargs) -> dict:
         self._pace()
         self.request_count += 1
-        response = self.session.get(url, timeout=self.timeout, **kwargs)
+        response = self._request("get", url, **kwargs)
         if response.status_code == 429:
             raise RateLimitedError(f"Rate limited by {url}", response=response)
         response.raise_for_status()
@@ -50,7 +71,7 @@ class HttpClient:
     def post_json(self, url: str, **kwargs):
         self._pace()
         self.request_count += 1
-        response = self.session.post(url, timeout=self.timeout, **kwargs)
+        response = self._request("post", url, **kwargs)
         if response.status_code == 429:
             raise RateLimitedError(f"Rate limited by {url}", response=response)
         response.raise_for_status()

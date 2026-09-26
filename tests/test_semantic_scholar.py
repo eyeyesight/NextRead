@@ -64,6 +64,18 @@ def test_influential_citation_uses_seed_to_reference_edge(tmp_path):
     assert papers[2].is_influential_citation is None
 
 
+def test_public_semantic_scholar_requests_do_not_require_a_key(tmp_path):
+    provider = SemanticScholarProvider(ApiCache(tmp_path / "cache.db"))
+    assert "x-api-key" not in provider.http.session.headers
+    provider.http = SemanticScholarHttp()
+    paper = ReferencePaper(doi="10.1000/influential")
+
+    provider.enrich_with_seed(SeedPaper(doi="10.1000/seed"), [paper])
+
+    assert paper.semantic_scholar_id == "influential"
+    assert not provider.partial_errors
+
+
 class FieldsSensitiveReferencesHttp:
     def __init__(self):
         self.calls = 0
@@ -138,3 +150,20 @@ def test_batch_rate_limit_preserves_cached_paper_metadata(tmp_path):
     assert cited.semantic_similarity == 1.0
     assert missing.semantic_scholar_id is None
     assert provider.partial_errors == ["Rate limited by batch endpoint"]
+
+
+def test_windows_socket_refusal_is_reported_as_network_access_issue(tmp_path):
+    def blocked(*_args, **_kwargs):
+        raise requests.ConnectionError(
+            "HTTPSConnectionPool(host='api.semanticscholar.org'): "
+            "Failed to establish a new connection: [WinError 10013]"
+        )
+
+    provider = SemanticScholarProvider(ApiCache(tmp_path / "cache.db"))
+    provider.http.session.post = blocked
+
+    provider.enrich([ReferencePaper(doi="10.1000/test")])
+
+    assert provider.partial_errors == [
+        "Windows 拒絕 NextRead 連線到 Semantic Scholar；請檢查防火牆、代理伺服器或防毒軟體的 Python 網路權限。"
+    ]
