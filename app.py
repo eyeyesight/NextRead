@@ -540,7 +540,7 @@ with head:
     st.title("NextRead")
 st.write(t("輸入論文 DOI 或標題，即可取得閱讀建議。也可以上傳 PDF，抽取或比對參考文獻。", "Enter a paper DOI or title for fast recommendations; optionally upload a PDF to extract or compare references."))
 st.info(t(
-    "Reading Priority 排出這份參考文獻清單的閱讀順序。你可以先看 SJR Quartile，了解期刊在所屬學科的分區，再用 Local PageRank、Semantic Similarity、FWCI 等指標判斷推薦原因。",
+    "Reading Priority 告訴你先讀哪篇；想知道原因，先看 SJR 期刊分區，再看引用關係、相似度等指標。",
     "Reading Priority determines the reading order for this reference list. Use SJR Quartile to quickly see a journal's standing within its subject category, then consult Local PageRank, Semantic Similarity, FWCI, and other metrics to understand why a paper may deserve priority.",
 ))
 if pipeline.sjr.available:
@@ -565,7 +565,7 @@ grobid_status_note = None
 with st.expander(t("進階設定", "Advanced settings")):
     use_grobid = st.checkbox(t("使用 GROBID 解析 PDF", "Use GROBID to parse PDF"), value=False)
     st.caption(t(
-        "GROBID 是選用功能。不裝 Docker 也能取得閱讀建議；若希望從 PDF 盡量擷取完整的參考文獻清單，建議使用 GROBID。抽取結果仍需與原文核對。",
+        "不裝 Docker 也能取得閱讀建議。想從 PDF 盡量擷取完整的參考文獻，建議選用 GROBID；結果仍須對照原文。",
         "GROBID is optional: fast recommendations work without Docker. For the most complete PDF-derived reference list, we recommend GROBID. Verify extracted references against the paper.",
     ))
     if use_grobid:
@@ -605,12 +605,12 @@ with st.expander(t("進階設定", "Advanced settings")):
         st.session_state.pop("grobid_check_error", None)
         st.session_state.pop("grobid_recheck_requested", None)
     crossref = st.checkbox(t("Crossref 逐筆書目辨識", "Crossref per-reference lookup"), value=defaults["crossref"])
-    st.caption(t("輸入 DOI 或標題時，一律使用 Crossref 查找論文及出版者提交的參考文獻清單。這個選項只控制後續是否逐筆查詢。", "The DOI/title entry always uses Crossref for the source paper and publisher-deposited list; this option controls subsequent per-reference lookup only."))
+    st.caption(t("輸入 DOI 或標題時，Crossref 一律查找論文及出版者提交的參考文獻；此選項只控制後續逐筆查詢。", "The DOI/title entry always uses Crossref for the source paper and publisher-deposited list; this option controls subsequent per-reference lookup only."))
     openalex = st.checkbox("OpenAlex", value=defaults["openalex"])
     semantic_scholar = st.checkbox("Semantic Scholar", value=defaults["semantic_scholar"])
     force_refresh = st.checkbox(t("重新查詢外部 API（不使用快取）", "Re-query external APIs (skip cache)"))
     st.caption(t(
-        "平常會使用本機快取，加快分析速度。勾選後，這次分析會略過 Crossref、OpenAlex 和 Semantic Scholar 的快取，重新查詢已啟用的服務並更新快取。這可能需要更多時間，也會消耗 API 額度。",
+        "勾選後，本次會略過快取，重新查詢已啟用的 Crossref、OpenAlex 和 Semantic Scholar，並更新快取；可能較慢，也會消耗 API 額度。",
         "Normally, cached API responses speed up analysis. This option skips existing Crossref, OpenAlex, and Semantic Scholar cache entries for this run, re-queries enabled services, and updates the cache. It may be slower and use API quota.",
     ))
     st.divider()
