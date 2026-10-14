@@ -73,11 +73,37 @@ API Key 都是選填；未設定時，系統會嘗試使用各服務的公開額
 .\.venv\Scripts\python.exe -m scripts.check_setup
 ```
 
-檢查會顯示 OpenAlex、Semantic Scholar 的 Key 是否載入、SJR 資料是否安裝，以及執行 NextRead 的 Python 能否連上 Crossref、OpenAlex 和 Semantic Scholar；它不會印出 Key 值。Key「已載入」不等於有效，服務回應 401／403 才需要檢查授權，429 則表示額度或節流問題。如果出現 Windows 拒絕連線（`WinError 10013`），請檢查該電腦對 `.venv\Scripts\python.exe` 的防火牆、防毒軟體或代理伺服器設定；補上 API Key 無法解除本機的 socket 權限限制。不要為了測試而關閉整台電腦的防火牆。
+檢查會顯示 OpenAlex、Semantic Scholar 的 Key 是否載入、SJR 資料是否安裝，以及執行 NextRead 的 Python 能否連上三個 API，不會印出 Key 值。Key「已載入」只代表已讀到設定，請再看連線結果：
+
+| 檢查結果 | 接下來怎麼做 |
+| --- | --- |
+| 可連線 | 可啟動 NextRead；實際分析仍可能遇到個別文獻缺漏或 API 節流 |
+| Windows 拒絕連線／`WinError 10013` | 依下方說明檢查執行環境與 Python 網路權限，增加 Key 無法解除這項限制 |
+| HTTP 401／403 | 檢查 Key、服務授權及網路代理的存取政策 |
+| HTTP 429 | 已達額度或遭節流，稍後再試；有 Key 也可能遇到 |
+| 連線失敗／逾時 | 檢查網路、DNS、代理伺服器及服務狀態 |
 
 SJR CSV 也不隨 GitHub 專案下載，檢查顯示「未安裝」時，請依[「SJR 資料」](#sjr-資料)下載並匯入。缺少 Key 或 SJR 檔案不會阻止介面啟動，但相關指標可能無法取得；外部 API 不可用時也無法保證完整分析。
 
-若先前透過受限的自動化環境啟動，請從檔案總管執行上述檢查。確認可連線後，再雙擊 `start-nextread.cmd` 重新啟動並分析；這不需要以系統管理員身分執行。若檢查仍遭拒，須由使用者或電腦管理者確認 Python 的網路權限，NextRead 無法自行解除作業系統的限制。遇到 `10013` 時，本次分析會停止向該服務發送新的請求，保留可用快取，下一次分析會重新嘗試連線。
+#### Windows 首次使用與連線權限
+
+一般個人電腦不需要預先新增防火牆規則，也不需要以系統管理員身分執行 NextRead。[Windows 防火牆預設允許對外連線](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/configure)，但組織政策、安全軟體或受限執行環境可能另有限制。
+
+首次使用請從檔案總管雙擊 `check-nextread.cmd`，確認服務可連線後，再雙擊 `start-nextread.cmd`。若原本由自動化工具或受限終端機啟動，也請用這個方式重新啟動；只重新整理瀏覽器不會改變後端 Python 程序的權限。
+
+若從檔案總管執行仍出現 `10013`，請把檢查結果及其中的 Python 路徑提供給電腦管理者，確認該程序能依組織政策對以下服務發出 HTTPS 請求（一般為 TCP 443）：
+
+- `api.crossref.org`
+- `api.openalex.org`
+- `api.semanticscholar.org`
+
+安全軟體可能依程式路徑套用規則，搬移專案或重建 `.venv` 後應重新確認實際路徑。本機使用無須為了查詢 API 對外開放 8501 或 8070 的入站連線，也不要關閉整台電腦的防火牆。
+
+公司或學校若要求使用代理伺服器，請依管理者提供的值設定 `HTTPS_PROXY`，並將 `localhost,127.0.0.1,::1` 加入 `NO_PROXY`，讓本機網站與 GROBID 直接連線。若代理使用組織憑證，可依管理者指示設定 `REQUESTS_CA_BUNDLE`；不要關閉 TLS 憑證驗證。這些設定可放在本機 `.env`，儲存後重新啟動 NextRead，詳細格式見 [Requests 代理設定文件](https://requests.readthedocs.io/en/stable/user/advanced/#proxies)。沒有代理需求時不必填寫。
+
+開發期間曾在同一台 Windows 電腦重現：相同 Python 與 Key 在受限執行環境收到 `10013`，經授權改在可連網的環境執行後，三個服務均可連線。該次處理沒有修改 Windows 防火牆規則，也沒有額外執行 Semantic Scholar 授權流程，因此不能把所有 `10013` 都判定成缺少 Key 或防火牆設定錯誤。
+
+NextRead 無法自行解除作業系統的限制。遇到 `10013` 時，本次分析會停止向該服務發送新的請求，保留可用快取，下一次分析會重新嘗試連線。
 
 ### 5. 啟動 NextRead
 
