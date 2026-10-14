@@ -164,6 +164,7 @@ def test_windows_socket_refusal_is_reported_as_network_access_issue(tmp_path):
 
     provider.enrich([ReferencePaper(doi="10.1000/test")])
 
-    assert provider.partial_errors == [
-        "Windows 拒絕 NextRead 連線到 Semantic Scholar；請檢查防火牆、代理伺服器或防毒軟體的 Python 網路權限。"
-    ]
+    assert len(provider.partial_errors) == 1
+    assert "Windows 拒絕 NextRead 連線到 Semantic Scholar" in provider.partial_errors[0]
+    assert "check-nextread.cmd" in provider.partial_errors[0]
+    assert "HTTPSConnectionPool" not in provider.partial_errors[0]

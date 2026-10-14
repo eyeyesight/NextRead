@@ -720,9 +720,16 @@ if result:
     summary[5].metric(t("有效計分面向", "Active dimensions"), f"{result.stats['active_dimensions']} / 6")
     for warning in result.warnings:
         st.warning(warning)
-    performance_charts(result.references)
+    has_ranking = result.stats["active_dimensions"] > 0
+    if has_ranking:
+        performance_charts(result.references)
+    else:
+        st.info(t(
+            "目前沒有可用的計分指標，以下僅列出參考文獻，尚無法建議閱讀順序。若有連線錯誤，請先執行專案資料夾中的 check-nextread.cmd，待檢查通過後重新分析。",
+            "No scoring data is available, so the references below are not a reading recommendation. If a connection failed, run check-nextread.cmd in the project folder and analyze again after the checks pass.",
+        ))
     filtered = filtered_rows(rows_for(result))
-    st.header(t("參考文獻閱讀順序", "Reference reading order"))
+    st.header(t("參考文獻閱讀順序", "Reference reading order") if has_ranking else t("參考文獻清單", "Reference list"))
     visible = [key for key in filtered[0] if key != "_paper_index"] if filtered else []
     status_column = t("辨識狀態", "Resolution Status")
     st.dataframe(

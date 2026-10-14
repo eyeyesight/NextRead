@@ -22,6 +22,7 @@ class HttpClient:
         self.min_interval = min_interval
         self.last_request_at: float | None = None
         self.request_count = 0
+        self.blocked_hosts: dict[str, str] = {}
 
     def _pace(self) -> None:
         if self.min_interval <= 0:
@@ -32,20 +33,24 @@ class HttpClient:
         self.last_request_at = time.monotonic()
 
     def _request(self, method: str, url: str, **kwargs):
+        host = urlsplit(url).hostname or "外部服務"
+        if host in self.blocked_hosts:
+            raise NetworkAccessError(self.blocked_hosts[host])
         try:
             return getattr(self.session, method)(url, timeout=self.timeout, **kwargs)
         except requests.ConnectionError as exc:
             if "WinError 10013" not in str(exc):
                 raise
-            host = urlsplit(url).hostname or "外部服務"
             service = {
                 "api.crossref.org": "Crossref",
                 "api.openalex.org": "OpenAlex",
                 "api.semanticscholar.org": "Semantic Scholar",
             }.get(host, host)
-            raise NetworkAccessError(
-                f"Windows 拒絕 NextRead 連線到 {service}；請檢查防火牆、代理伺服器或防毒軟體的 Python 網路權限。"
-            ) from exc
+            self.blocked_hosts[host] = (
+                f"Windows 拒絕 NextRead 連線到 {service}；請從檔案總管開啟 check-nextread.cmd 檢查連線，"
+                "再確認防火牆、代理伺服器或防毒軟體的 Python 網路權限。"
+            )
+            raise NetworkAccessError(self.blocked_hosts[host]) from exc
 
     @retry(
         retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, RateLimitedError)),

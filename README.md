@@ -67,7 +67,7 @@ API Key 都是選填；未設定時，系統會嘗試使用各服務的公開額
 
 ### 4. 檢查新電腦的設定與連線
 
-安裝依賴套件並建立 `.env` 後，在專案資料夾執行：
+安裝依賴套件並建立 `.env` 後，可從檔案總管雙擊 `check-nextread.cmd` 查看檢查結果，或在專案資料夾執行：
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.check_setup
@@ -76,6 +76,8 @@ API Key 都是選填；未設定時，系統會嘗試使用各服務的公開額
 檢查會顯示 OpenAlex、Semantic Scholar 的 Key 是否載入、SJR 資料是否安裝，以及執行 NextRead 的 Python 能否連上 Crossref、OpenAlex 和 Semantic Scholar；它不會印出 Key 值。Key「已載入」不等於有效，服務回應 401／403 才需要檢查授權，429 則表示額度或節流問題。如果出現 Windows 拒絕連線（`WinError 10013`），請檢查該電腦對 `.venv\Scripts\python.exe` 的防火牆、防毒軟體或代理伺服器設定；補上 API Key 無法解除本機的 socket 權限限制。不要為了測試而關閉整台電腦的防火牆。
 
 SJR CSV 也不隨 GitHub 專案下載，檢查顯示「未安裝」時，請依[「SJR 資料」](#sjr-資料)下載並匯入。缺少 Key 或 SJR 檔案不會阻止介面啟動，但相關指標可能無法取得；外部 API 不可用時也無法保證完整分析。
+
+若先前透過受限的自動化環境啟動，請從檔案總管執行上述檢查。確認可連線後，再雙擊 `start-nextread.cmd` 重新啟動並分析；這不需要以系統管理員身分執行。若檢查仍遭拒，須由使用者或電腦管理者確認 Python 的網路權限，NextRead 無法自行解除作業系統的限制。遇到 `10013` 時，本次分析會停止向該服務發送新的請求，保留可用快取，下一次分析會重新嘗試連線。
 
 ### 5. 啟動 NextRead
 

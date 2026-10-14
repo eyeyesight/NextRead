@@ -72,6 +72,7 @@ def test_all_openalex_failures_explain_windows_network_refusal(tmp_path, monkeyp
     result = pipeline.analyze(tmp_path / "paper.pdf", {"crossref": False, "openalex": True, "semantic_scholar": False})
 
     assert any("Windows 拒絕 NextRead 連線到 OpenAlex" in warning for warning in result.warnings)
+    assert result.provider_states["openalex"] == "failed"
 
 
 def test_all_crossref_failures_explain_windows_network_refusal(tmp_path, monkeypatch):

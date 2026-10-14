@@ -215,7 +215,7 @@ class AnalysisPipeline:
                 provider.enrich(papers, force_refresh)
                 failures = sum("openalex_error" in paper.provider_data for paper in papers if paper.doi)
                 attempted = sum(bool(paper.doi) for paper in papers)
-                states["openalex"] = "partial" if failures else "success"
+                states["openalex"] = ("failed" if failures == attempted else "partial") if failures else "success"
                 if failures:
                     warnings.append(message(f"{attempted} 篇有 DOI 的文獻中，有 {failures} 篇未能從 OpenAlex 取得資料。", f"OpenAlex failed for {failures} of {attempted} references with a DOI.") + network_hint("openalex_error"))
             except Exception as exc:

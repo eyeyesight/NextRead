@@ -42,3 +42,27 @@ def test_windows_socket_refusal_is_not_retried_or_exposes_raw_url(method):
 
     assert len(calls) == 1
     assert "HTTPSConnectionPool" not in str(error.value)
+
+
+def test_socket_denial_stops_same_host_requests_but_new_client_can_retry():
+    calls = []
+
+    def blocked(url, **_kwargs):
+        calls.append(url)
+        raise requests.ConnectionError("[WinError 10013]")
+
+    client = HttpClient()
+    client.session.get = blocked
+    for url in ("https://api.openalex.org/works/one", "https://api.openalex.org/works/two"):
+        with pytest.raises(NetworkAccessError):
+            client.get_json(url)
+    assert len(calls) == 1
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = b"{}"
+    client.session.get = lambda *args, **kwargs: response
+    assert client.get_json("https://api.crossref.org/works") == {}
+    recovered = HttpClient()
+    recovered.session.get = lambda *args, **kwargs: response
+    assert recovered.get_json("https://api.openalex.org/works/one") == {}
