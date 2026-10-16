@@ -82,3 +82,32 @@ def test_recheck_shows_completed_feedback_when_api_is_still_warming(monkeypatch)
     assert len(app.status[0].markdown) == 1
     assert any("GROBID 尚未就緒" in warning.value for warning in app.warning)
     assert not app.exception
+
+
+def test_grobid_selected_with_only_title_requires_pdf(monkeypatch):
+    monkeypatch.setattr("parsers.grobid_service.check_grobid_ready", lambda *args, **kwargs: None)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=15).run()
+    app.text_input[0].set_value("Language Models Predict Empathy Gaps Between Social In-groups and Out-groups").run()
+    app.checkbox[0].set_value(True).run()
+
+    assert next(button for button in app.button if button.label == "開始分析").disabled
+    assert any("請先上傳 PDF" in warning.value for warning in app.warning)
+    assert not app.exception
+
+
+def test_failed_analysis_does_not_keep_an_old_empty_result(monkeypatch):
+    from core.models import AnalysisResult, SeedPaper
+
+    monkeypatch.setattr("parsers.grobid_service.check_grobid_ready", lambda *args, **kwargs: None)
+    monkeypatch.setattr(AnalysisPipeline, "analyze_identifier", lambda *args, **kwargs:
+                        (_ for _ in ()).throw(ValueError("GROBID extraction failed")))
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=15).run()
+    app.checkbox[0].set_value(True).run()
+    app.file_uploader[0].upload("paper.pdf", b"%PDF-1.4", "application/pdf").run()
+    app.session_state["result"] = AnalysisResult(SeedPaper(title="Old result"), [], {})
+    next(button for button in app.button if button.label == "開始分析").click().run()
+
+    assert "result" not in app.session_state
+    assert any("GROBID extraction failed" in error.value for error in app.error)
+    assert not any(header.value == "分析摘要" for header in app.header)
+    assert not app.exception

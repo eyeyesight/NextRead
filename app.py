@@ -569,6 +569,8 @@ with st.expander(t("進階設定", "Advanced settings")):
         "GROBID is optional: fast recommendations work without Docker. For the most complete PDF-derived reference list, we recommend GROBID. Verify extracted references against the paper.",
     ))
     if use_grobid:
+        if not uploaded:
+            st.warning(t("已選用 GROBID，請先上傳 PDF。只輸入 DOI 或標題無法使用 GROBID 解析。", "GROBID requires a PDF upload. A DOI or title alone cannot be parsed with GROBID."))
         st.caption(t("請先開啟 Docker Desktop，再到專案資料夾執行 `docker compose up -d grobid`。NextRead 只檢查服務是否就緒，不會自動啟動。", "Start Docker Desktop yourself, then run `docker compose up -d grobid` in the project folder. NextRead checks the service but does not start it."))
         if not st.session_state.get("grobid_check_done"):
             st.session_state["grobid_check_done"] = True
@@ -659,7 +661,8 @@ cols[3].caption(t("API Key 已載入", "API key loaded") if settings.semantic_sc
 cols[4].metric("SJR", str(pipeline.sjr.year or t("已載入", "Loaded")) if pipeline.sjr.available else t("無資料", "No data"))
 cols[5].metric("Scite", t("尚未實作", "Not implemented"))
 
-if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (identifier.strip() or uploaded)):
+if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (identifier.strip() or uploaded) or (use_grobid and not uploaded)):
+    st.session_state.pop("result", None)
     bar, text = st.progress(0), st.empty()
     def update(step: int, message: str) -> None:
         bar.progress(step / 7); text.write(f"{step}. {message}")

@@ -3,6 +3,8 @@ from core.models import ReferencePaper, SeedPaper
 from core.pipeline import AnalysisPipeline
 from resolvers.crossref import CrossrefResolver
 from storage.cache import ApiCache
+import pytest
+import requests
 
 
 ENABLED = {"crossref": False, "openalex": False, "semantic_scholar": False}
@@ -108,3 +110,34 @@ def test_duplicate_search_results_for_same_doi_are_not_ambiguous(tmp_path):
     assert len(references) == 1
     assert "A. Author" in references[0].raw_reference
     assert "Journal" in references[0].raw_reference
+
+
+def test_selected_grobid_failure_does_not_return_empty_crossref_success(tmp_path, monkeypatch):
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (SeedPaper(title="Source"), []))
+    monkeypatch.setattr(pipeline.grobid, "process_pdf", lambda path:
+                        (_ for _ in ()).throw(requests.HTTPError("GROBID HTTP 500")))
+    with pytest.raises(requests.HTTPError, match="GROBID HTTP 500"):
+        pipeline.analyze_identifier("Source", ENABLED, pdf_path=tmp_path / "source.pdf", use_grobid=True)
+
+
+def test_grobid_selected_without_pdf_does_not_silently_use_crossref(tmp_path, monkeypatch):
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (SeedPaper(title="Source"), []))
+    with pytest.raises(ValueError, match="PDF"):
+        pipeline.analyze_identifier("Source", ENABLED, use_grobid=True)
+
+
+def test_selected_grobid_references_take_precedence_over_crossref(tmp_path, monkeypatch):
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    seed = SeedPaper(title="Source")
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args:
+                        (seed, [ReferencePaper(title="Publisher reference")]))
+    monkeypatch.setattr(pipeline.grobid, "process_pdf", lambda path:
+                        (seed, [ReferencePaper(title="PDF reference")]))
+    monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: True)
+
+    result = pipeline.analyze_identifier("Source", ENABLED, pdf_path=tmp_path / "source.pdf", use_grobid=True)
+    assert result.stats["reference_source"] == "grobid"
+    assert [paper.title for paper in result.references] == ["PDF reference"]
+    assert not any("Crossref 未提供參考文獻" in warning for warning in result.warnings)

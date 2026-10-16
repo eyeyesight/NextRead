@@ -70,6 +70,8 @@ class AnalysisPipeline:
         use_grobid: bool = False,
     ) -> AnalysisResult:
         update = progress or (lambda _step, _message: None)
+        if use_grobid and pdf_path is None:
+            raise ValueError("使用 GROBID 解析時，請先上傳 PDF；只有 DOI 或標題無法進行 PDF 解析。")
         resolver = CrossrefResolver(self.cache, self.settings.crossref_mailto)
         if not identifier.strip():
             if pdf_path is None:
@@ -116,11 +118,13 @@ class AnalysisPipeline:
                 if not pdf_matches_seed(pdf_path, seed.title):
                     raise ValueError("Could not confirm that this PDF is the selected paper")
             except Exception as exc:
+                if use_grobid:
+                    raise
                 comparison_error = str(exc)
                 pdf_references = None
                 extraction = None
         reference_source = "crossref"
-        if not papers and pdf_references:
+        if pdf_references and (use_grobid or not papers):
             papers = pdf_references
             reference_source = extraction
         result = self._finish(seed, papers, enabled, force_refresh, progress, language, reference_source)
@@ -132,9 +136,9 @@ class AnalysisPipeline:
             ))
         else:
             result.warnings.insert(0, (
-                "Crossref 未提供參考文獻；這份清單從 PDF 抽取，尚未逐筆確認是否完整。"
+                "這份清單從 PDF 抽取，尚未逐筆確認是否完整。"
                 if language == "zh-TW" else
-                "Crossref supplied no references; this list was extracted from the PDF and has not been checked item by item for completeness."
+                "This list was extracted from the PDF and has not been checked item by item for completeness."
             ))
         if not crossref_papers:
             result.provider_states["crossref"] = "no_references"

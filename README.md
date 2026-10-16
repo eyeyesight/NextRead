@@ -109,6 +109,8 @@ NextRead 無法自行解除作業系統的限制。遇到 `10013` 時，本次�
 
 完成初次安裝後，執行 `start-nextread.cmd` 即可啟動 NextRead，並在預設瀏覽器開啟 <http://localhost:8501>。啟動器不會開啟 Docker。若要使用 GROBID，請自行開啟 Docker Desktop，並在專案資料夾執行 `docker compose up -d grobid`。勾選介面中的「使用 GROBID 解析 PDF」時，NextRead 只會檢查 Docker、GROBID 容器和 API 是否就緒；若尚未就緒，處理畫面提示的問題後，可按「重新檢查 GROBID」。Docker Compose 專案名稱固定為 `nextread`（Compose 不接受大寫），容器通常名為 `nextread-grobid-1`，不再隨資料夾名稱變動。
 
+選用 GROBID 時須同時上傳 PDF，參考文獻會以 PDF 抽取結果為主。全文解析沒有抽出文獻時，NextRead 會再用 GROBID 的參考文獻專用接口嘗試一次；若仍為空或解析失敗，畫面會顯示錯誤，不會以 Crossref 的空清單宣告分析完成。
+
 #### 已安裝舊版 GROBID 的使用者
 
 先前從 `AcademicReferences` 資料夾啟動的容器，通常屬於 `academicreferences` 專案。更新程式碼不會自動改名、停止或刪除舊容器；只要它仍在執行，NextRead 就能辨識並使用。若想改用新名稱，先用 `docker compose ls` 確認舊專案名稱，再到本專案資料夾執行：

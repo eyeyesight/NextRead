@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import logging
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from core.models import ReferencePaper, SeedPaper
 
 TEI = {"tei": "http://www.tei-c.org/ns/1.0"}
 DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
+logger = logging.getLogger(__name__)
 
 
 def normalize_doi(value: str | None) -> str | None:
@@ -54,15 +56,25 @@ class GrobidClient:
             return False
 
     def process_pdf(self, pdf_path: str | Path) -> tuple[SeedPaper, list[ReferencePaper]]:
+        seed, references = self._process_pdf(pdf_path, "processFulltextDocument")
+        logger.info("GROBID full-text extraction returned %d references", len(references))
+        if not references:
+            _, references = self._process_pdf(pdf_path, "processReferences")
+            logger.info("GROBID reference-only extraction returned %d references", len(references))
+        if not references:
+            raise ValueError("GROBID 的全文與參考文獻解析皆未抽出參考文獻，請確認 PDF 含有清楚的 References 頁面，並查看 logs/app.log。")
+        return seed, references
+
+    def _process_pdf(self, pdf_path: str | Path, endpoint: str) -> tuple[SeedPaper, list[ReferencePaper]]:
         with Path(pdf_path).open("rb") as pdf:
             response = requests.post(
-                f"{self.base_url}/api/processFulltextDocument",
+                f"{self.base_url}/api/{endpoint}",
                 files={"input": (Path(pdf_path).name, pdf, "application/pdf")},
                 data={"consolidateHeader": "0", "consolidateCitations": "0", "includeRawCitations": "1"},
                 timeout=self.timeout,
             )
         response.raise_for_status()
-        return parse_tei(response.text)
+        return parse_tei(response.text) if response.text.strip() else (SeedPaper(), [])
 
 
 def parse_tei(xml_text: str) -> tuple[SeedPaper, list[ReferencePaper]]:

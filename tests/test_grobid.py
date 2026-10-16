@@ -1,4 +1,8 @@
-from parsers.grobid import parse_tei
+from types import SimpleNamespace
+
+import pytest
+
+from parsers.grobid import GrobidClient, parse_tei
 
 
 TEI_XML = """<?xml version="1.0"?>
@@ -32,3 +36,49 @@ def test_parse_tei_extracts_seed_and_reference():
     assert references[0].authors == ["Grace Hopper"]
     assert references[0].pages == "1-9"
     assert references[0].resolution_status == "exact_doi"
+
+
+def test_empty_fulltext_retries_reference_only_endpoint(tmp_path, monkeypatch):
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    empty = TEI_XML.split("  <text>")[0] + "</TEI>"
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append((url, kwargs["data"]))
+        return SimpleNamespace(text=empty if len(calls) == 1 else TEI_XML,
+                               raise_for_status=lambda: None)
+
+    monkeypatch.setattr("parsers.grobid.requests.post", post)
+    seed, refs = GrobidClient("http://localhost:8070").process_pdf(pdf)
+
+    assert seed.title == "Seed paper"
+    assert len(refs) == 1
+    assert [url.rsplit("/", 1)[-1] for url, _ in calls] == ["processFulltextDocument", "processReferences"]
+    assert all(data["consolidateCitations"] == "0" for _, data in calls)
+
+
+def test_grobid_empty_in_both_endpoints_is_not_success(tmp_path, monkeypatch):
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    empty = TEI_XML.split("  <text>")[0] + "</TEI>"
+    monkeypatch.setattr("parsers.grobid.requests.post", lambda *args, **kwargs:
+                        SimpleNamespace(text=empty, raise_for_status=lambda: None))
+
+    with pytest.raises(ValueError, match="GROBID.*參考文獻"):
+        GrobidClient("http://localhost:8070").process_pdf(pdf)
+
+
+def test_successful_grobid_does_not_send_pdf_twice(tmp_path, monkeypatch):
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4")
+    calls = []
+
+    def post(url, **kwargs):
+        calls.append(url)
+        return SimpleNamespace(text=TEI_XML, raise_for_status=lambda: None)
+
+    monkeypatch.setattr("parsers.grobid.requests.post", post)
+    _, refs = GrobidClient("http://localhost:8070").process_pdf(pdf)
+    assert len(refs) == 1
+    assert len(calls) == 1
