@@ -4,6 +4,9 @@ from streamlit.testing.v1 import AppTest
 
 from core.pipeline import AnalysisPipeline
 from parsers.grobid_service import GrobidUnavailableError
+from parsers.grobid import GrobidClient
+from core.models import ReferencePaper, SeedPaper
+from resolvers.crossref import CrossrefResolver
 
 
 def test_successful_analysis_check_clears_earlier_grobid_warning(monkeypatch):
@@ -110,4 +113,51 @@ def test_failed_analysis_does_not_keep_an_old_empty_result(monkeypatch):
     assert "result" not in app.session_state
     assert any("GROBID extraction failed" in error.value for error in app.error)
     assert not any(header.value == "分析摘要" for header in app.header)
+    assert not app.exception
+
+
+def test_switch_from_empty_title_search_to_grobid_clears_stale_result(monkeypatch):
+    title = "Language Models Predict Empathy Gaps Between Social In-groups and Out-groups"
+    seed = SeedPaper(title=title)
+    grobid_calls = []
+
+    def process_pdf(self, path):
+        grobid_calls.append(path.read_bytes())
+        return seed, [ReferencePaper(title=f"Reference {i}") for i in range(79)]
+
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (seed, []))
+    monkeypatch.setattr(GrobidClient, "process_pdf", process_pdf)
+    monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: True)
+    monkeypatch.setattr("parsers.grobid_service.check_grobid_ready", lambda *args, **kwargs: None)
+    app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=15).run()
+    app.radio[0].set_value("parser").run()
+    app.text_input[0].set_value(title).run()
+    next(button for button in app.button if button.label == "開始分析").click().run()
+    assert app.session_state["result"].stats["references_extracted"] == 0
+
+    app.checkbox[0].set_value(True).run()
+    assert "result" not in app.session_state
+    assert not any(header.value == "分析摘要" for header in app.header)
+    assert any("輸入或分析設定已變更" in info.value for info in app.info)
+
+    app.file_uploader[0].upload("paper.pdf", b"%PDF-1.4", "application/pdf").run()
+    next(button for button in app.button if button.label == "開始分析").click().run()
+    assert grobid_calls == [b"%PDF-1.4"]
+    assert app.session_state["result"].stats["references_extracted"] == 79
+    assert app.session_state["result"].stats["reference_source"] == "grobid"
+    assert not any("輸入或分析設定已變更" in info.value for info in app.info)
+
+    app.run()
+    assert app.session_state["result"].stats["references_extracted"] == 79
+    assert len(grobid_calls) == 1
+    assert not app.exception
+
+    app.file_uploader[0].upload("paper.pdf", b"%PDF-1.4 updated", "application/pdf").run()
+    assert "result" not in app.session_state
+    next(button for button in app.button if button.label == "開始分析").click().run()
+    assert grobid_calls[-1] == b"%PDF-1.4 updated"
+    assert app.session_state["result"].stats["references_extracted"] == 79
+
+    app.text_input[0].set_value("A different paper title").run()
+    assert "result" not in app.session_state
     assert not app.exception

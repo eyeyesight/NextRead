@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import tempfile
@@ -661,8 +662,27 @@ cols[3].caption(t("API Key 已載入", "API key loaded") if settings.semantic_sc
 cols[4].metric("SJR", str(pipeline.sjr.year or t("已載入", "Loaded")) if pipeline.sjr.available else t("無資料", "No data"))
 cols[5].metric("Scite", t("尚未實作", "Not implemented"))
 
+analysis_inputs = (
+    identifier.strip(),
+    (uploaded.name, hashlib.sha256(uploaded.getbuffer()).hexdigest()) if uploaded else None,
+    use_grobid, crossref, openalex, semantic_scholar, force_refresh,
+)
+previous_inputs = st.session_state.get("analysis_inputs", analysis_inputs)
+if previous_inputs != analysis_inputs and "result" in st.session_state:
+    st.session_state.pop("result")
+    st.session_state["analysis_inputs_changed"] = True
+st.session_state["analysis_inputs"] = analysis_inputs
+analysis_change_note = st.empty()
+if st.session_state.get("analysis_inputs_changed"):
+    analysis_change_note.info(t(
+        "輸入或分析設定已變更，請按「開始分析」重新分析。",
+        "The input or analysis settings have changed. Select Start analysis to analyze again.",
+    ))
+
 if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (identifier.strip() or uploaded) or (use_grobid and not uploaded)):
     st.session_state.pop("result", None)
+    st.session_state.pop("analysis_inputs_changed", None)
+    analysis_change_note.empty()
     bar, text = st.progress(0), st.empty()
     def update(step: int, message: str) -> None:
         bar.progress(step / 7); text.write(f"{step}. {message}")
