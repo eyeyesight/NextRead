@@ -1,4 +1,5 @@
 from pathlib import Path
+import pytest
 
 from streamlit.testing.v1 import AppTest
 
@@ -7,6 +8,7 @@ from parsers.grobid_service import GrobidUnavailableError
 from parsers.grobid import GrobidClient
 from core.models import ReferencePaper, SeedPaper
 from resolvers.crossref import CrossrefResolver
+from providers.http import NetworkAccessError
 
 
 def test_successful_analysis_check_clears_earlier_grobid_warning(monkeypatch):
@@ -116,7 +118,8 @@ def test_failed_analysis_does_not_keep_an_old_empty_result(monkeypatch):
     assert not app.exception
 
 
-def test_switch_from_empty_title_search_to_grobid_clears_stale_result(monkeypatch):
+@pytest.mark.parametrize("source_error", [None, NetworkAccessError("blocked source lookup")])
+def test_switch_from_empty_title_search_to_grobid_clears_stale_result(monkeypatch, source_error, caplog):
     title = "Language Models Predict Empathy Gaps Between Social In-groups and Out-groups"
     seed = SeedPaper(title=title)
     grobid_calls = []
@@ -125,7 +128,13 @@ def test_switch_from_empty_title_search_to_grobid_clears_stale_result(monkeypatc
         grobid_calls.append(path.read_bytes())
         return seed, [ReferencePaper(title=f"Reference {i}") for i in range(79)]
 
-    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (seed, []))
+    def source_work(*args):
+        if grobid_calls and source_error:
+            raise source_error
+        return seed, []
+
+    caplog.set_level("INFO")
+    monkeypatch.setattr(CrossrefResolver, "source_work", source_work)
     monkeypatch.setattr(GrobidClient, "process_pdf", process_pdf)
     monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: True)
     monkeypatch.setattr("parsers.grobid_service.check_grobid_ready", lambda *args, **kwargs: None)
@@ -146,6 +155,8 @@ def test_switch_from_empty_title_search_to_grobid_clears_stale_result(monkeypatc
     assert app.session_state["result"].stats["references_extracted"] == 79
     assert app.session_state["result"].stats["reference_source"] == "grobid"
     assert not any("輸入或分析設定已變更" in info.value for info in app.info)
+    assert any("parser=grobid identifier_present=True pdf_present=True" in record.message for record in caplog.records)
+    assert any("completed: source=grobid references=79" in record.message for record in caplog.records)
 
     app.run()
     assert app.session_state["result"].stats["references_extracted"] == 79

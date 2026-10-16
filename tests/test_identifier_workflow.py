@@ -5,6 +5,7 @@ from resolvers.crossref import CrossrefResolver
 from storage.cache import ApiCache
 import pytest
 import requests
+from providers.http import NetworkAccessError
 
 
 ENABLED = {"crossref": False, "openalex": False, "semantic_scholar": False}
@@ -141,3 +142,49 @@ def test_selected_grobid_references_take_precedence_over_crossref(tmp_path, monk
     assert result.stats["reference_source"] == "grobid"
     assert [paper.title for paper in result.references] == ["PDF reference"]
     assert not any("Crossref 未提供參考文獻" in warning for warning in result.warnings)
+
+
+@pytest.mark.parametrize("lookup_error", [
+    NetworkAccessError("Windows denied source lookup"),
+    ValueError("No sufficiently close Crossref title match; enter a DOI"),
+])
+def test_grobid_retry_after_empty_title_result_survives_source_lookup_failure(tmp_path, monkeypatch, lookup_error):
+    title = "Language Models Predict Empathy Gaps Between Social In-groups and Out-groups"
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    lookups = []
+
+    def lookup(*args):
+        lookups.append(args)
+        if len(lookups) == 1:
+            return SeedPaper(title=title), []
+        raise lookup_error
+
+    monkeypatch.setattr(CrossrefResolver, "source_work", lookup)
+    monkeypatch.setattr(pipeline.grobid, "process_pdf", lambda path:
+                        (SeedPaper(title=title), [ReferencePaper(title="PDF reference")]))
+    monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: True)
+
+    first = pipeline.analyze_identifier(title, ENABLED)
+    assert first.references == []
+    refreshed = pipeline.analyze_identifier("", ENABLED, pdf_path=tmp_path / "source.pdf", use_grobid=True)
+    retried = pipeline.analyze_identifier(title, ENABLED, pdf_path=tmp_path / "source.pdf", use_grobid=True)
+
+    assert [paper.title for paper in retried.references] == [paper.title for paper in refreshed.references]
+    assert retried.stats["reference_source"] == "grobid"
+    assert any("Crossref" in warning for warning in retried.warnings)
+
+
+@pytest.mark.parametrize("identifier, seed", [
+    ("A completely different research paper title", SeedPaper(title="Language Models Predict Empathy Gaps Between Social In-groups and Out-groups")),
+    ("10.1000/selected", SeedPaper(title="Source", doi="10.1000/other")),
+])
+def test_grobid_source_lookup_failure_never_accepts_known_mismatched_pdf(tmp_path, monkeypatch, identifier, seed):
+    pipeline = AnalysisPipeline(Settings(cache_path=tmp_path / "cache.db"))
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args:
+                        (_ for _ in ()).throw(NetworkAccessError("blocked source lookup")))
+    monkeypatch.setattr(pipeline.grobid, "process_pdf", lambda path:
+                        (seed, [ReferencePaper(title="A reference")]))
+    monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: False)
+
+    with pytest.raises(ValueError, match="PDF"):
+        pipeline.analyze_identifier(identifier, ENABLED, pdf_path=tmp_path / "wrong.pdf", use_grobid=True)

@@ -4,11 +4,13 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 
+import requests
+
 from core.config import Settings
 from core.models import AnalysisResult
 from core.ranking import rank_papers
 from graph.local_citation_graph import build_local_graph
-from parsers.grobid import GrobidClient
+from parsers.grobid import GrobidClient, normalize_doi
 from parsers.pdf_text import extract_numbered_references, title_matches_first_page, verified_seed_doi
 from providers.openalex import OpenAlexProvider
 from providers.semantic_scholar import SemanticScholarProvider
@@ -73,6 +75,10 @@ class AnalysisPipeline:
         if use_grobid and pdf_path is None:
             raise ValueError("使用 GROBID 解析時，請先上傳 PDF；只有 DOI 或標題無法進行 PDF 解析。")
         resolver = CrossrefResolver(self.cache, self.settings.crossref_mailto)
+        grobid_document = None
+        if use_grobid and identifier.strip():
+            update(1, "正在用 GROBID 解析 PDF" if language == "zh-TW" else "Parsing PDF with GROBID")
+            grobid_document = self.grobid.process_pdf(pdf_path)
         if not identifier.strip():
             if pdf_path is None:
                 raise ValueError("Enter a DOI or title, or upload a PDF")
@@ -98,8 +104,32 @@ class AnalysisPipeline:
                         continue
                 if not identifier:
                     raise ValueError("Could not verify the source paper from PDF; enter its DOI or title")
-        update(1, "正在從 Crossref 取得原始論文與參考文獻" if language == "zh-TW" else "Fetching source paper and references from Crossref")
-        seed, papers = resolver.source_work(identifier, force_refresh)
+        if grobid_document is not None:
+            update(2, "正在核對原始論文資料" if language == "zh-TW" else "Checking source paper metadata")
+        else:
+            update(1, "正在從 Crossref 取得原始論文與參考文獻" if language == "zh-TW" else "Fetching source paper and references from Crossref")
+        try:
+            seed, papers = resolver.source_work(identifier, force_refresh)
+        except (ValueError, requests.RequestException) as exc:
+            if grobid_document is None:
+                raise
+            seed, papers = grobid_document
+            input_doi = normalize_doi(identifier)
+            if input_doi and seed.doi and input_doi != seed.doi:
+                raise ValueError("PDF source DOI differs from the selected DOI") from exc
+            if not input_doi and not (
+                title_matches_first_page(identifier, seed.title or "") or pdf_matches_seed(pdf_path, identifier)
+            ):
+                raise ValueError("Could not confirm that this PDF matches the entered title") from exc
+            logger.warning("Crossref source lookup unavailable after GROBID extraction: %s", type(exc).__name__)
+            result = self._finish(seed, papers, enabled, force_refresh, progress, language, "grobid")
+            result.stats["source_lookup"] = "unavailable"
+            result.warnings.insert(0, (
+                "無法透過 Crossref 核對輸入的論文資料，這次使用 PDF 辨識的資料與 GROBID 抽出的參考文獻，尚未逐筆確認清單是否完整。"
+                if language == "zh-TW" else
+                "Crossref could not verify the entered identifier. This run uses PDF metadata and GROBID references; list completeness remains unverified."
+            ))
+            return result
         crossref_papers = papers
         pdf_references = None
         extraction = None
@@ -107,7 +137,7 @@ class AnalysisPipeline:
         if pdf_path is not None:
             try:
                 if use_grobid:
-                    pdf_seed, pdf_references = self.grobid.process_pdf(pdf_path)
+                    pdf_seed, pdf_references = grobid_document
                     extraction = "grobid"
                 else:
                     pdf_seed = None

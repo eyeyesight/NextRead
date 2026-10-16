@@ -6,6 +6,7 @@ import json
 import logging
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import altair as alt
 import pandas as pd
@@ -680,6 +681,11 @@ if st.session_state.get("analysis_inputs_changed"):
     ))
 
 if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (identifier.strip() or uploaded) or (use_grobid and not uploaded)):
+    analysis_id = uuid4().hex[:12]
+    logging.info(
+        "Analysis request %s: parser=%s identifier_present=%s pdf_present=%s",
+        analysis_id, "grobid" if use_grobid else "crossref_or_local", bool(identifier.strip()), bool(uploaded),
+    )
     st.session_state.pop("result", None)
     st.session_state.pop("analysis_inputs_changed", None)
     analysis_change_note.empty()
@@ -702,14 +708,21 @@ if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (
             {"crossref": crossref, "openalex": openalex, "semantic_scholar": semantic_scholar},
             path, force_refresh, update, language, use_grobid,
         )
+        completed_result = st.session_state["result"]
+        if completed_result is not None:
+            logging.info(
+                "Analysis request %s completed: source=%s references=%s",
+                analysis_id, completed_result.stats.get("reference_source"), len(completed_result.references),
+            )
         bar.progress(1.0); text.write(t("分析完成", "Analysis complete"))
     except GrobidUnavailableError as exc:
+        logging.warning("Analysis request %s failed: GROBID unavailable", analysis_id)
         st.session_state["grobid_check_error"] = str(exc)
         grobid_status_note.warning(t(f"GROBID 尚未就緒：{exc}", f"GROBID is not ready: {exc}"))
         grobid_metric.metric("GROBID", t("未就緒", "Not ready"))
         st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
     except Exception as exc:
-        logging.exception("Analysis failed"); st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
+        logging.exception("Analysis request %s failed", analysis_id); st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
     finally:
         if path:
             path.unlink(missing_ok=True)
