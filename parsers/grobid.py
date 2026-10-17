@@ -33,6 +33,11 @@ def _year(value: str | None) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def _author_name(element: ET.Element) -> str | None:
+    name = element.find("tei:persName", TEI)
+    return _text(name) if name is not None else _text(element)
+
+
 def _scope_value(element: ET.Element) -> str | None:
     value = _text(element)
     if value:
@@ -82,7 +87,7 @@ def parse_tei(xml_text: str) -> tuple[SeedPaper, list[ReferencePaper]]:
     header = root.find(".//tei:teiHeader", TEI)
     title_node = header.find(".//tei:titleStmt/tei:title", TEI) if header is not None else None
     author_nodes = header.findall(".//tei:sourceDesc//tei:author", TEI) if header is not None else []
-    seed_authors = [_text(node) for node in author_nodes]
+    seed_authors = [_author_name(node) for node in author_nodes]
     idno_nodes = header.findall(".//tei:idno", TEI) if header is not None else []
     seed_doi = next((normalize_doi(_text(node)) for node in idno_nodes if (node.get("type") or "").lower() == "doi"), None)
     date_node = header.find(".//tei:publicationStmt/tei:date", TEI) if header is not None else None
@@ -94,7 +99,7 @@ def parse_tei(xml_text: str) -> tuple[SeedPaper, list[ReferencePaper]]:
         doi=seed_doi,
         authors=[value for value in seed_authors if value],
         abstract=_text(abstract_node),
-        year=_year(date_node.get("when") if date_node is not None else None),
+        year=_year((date_node.get("when") or _text(date_node)) if date_node is not None else None),
     )
 
     references: list[ReferencePaper] = []
@@ -120,7 +125,7 @@ def parse_tei(xml_text: str) -> tuple[SeedPaper, list[ReferencePaper]]:
                 title=title,
                 doi=doi,
                 year=_year(date.get("when") if date is not None else raw),
-                authors=[value for node in authors if (value := _text(node))],
+                authors=[value for node in authors if (value := _author_name(node))],
                 source_name=source,
                 volume=scope_map.get("volume"),
                 issue=scope_map.get("issue"),

@@ -38,6 +38,17 @@ def test_parse_tei_extracts_seed_and_reference():
     assert references[0].resolution_status == "exact_doi"
 
 
+def test_author_names_exclude_emails_affiliations_for_identity_matching():
+    xml = TEI_XML.replace(
+        "</persName></author>",
+        "</persName><email>person@example.org</email><affiliation><orgName>University</orgName></affiliation></author>",
+    ).replace('<date when="2025"/>', '<date>2025</date>')
+    seed, references = parse_tei(xml)
+    assert seed.authors == ["Ada Lovelace"]
+    assert seed.year == 2025
+    assert references[0].authors == ["Grace Hopper"]
+
+
 def test_empty_fulltext_retries_reference_only_endpoint(tmp_path, monkeypatch):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF-1.4")

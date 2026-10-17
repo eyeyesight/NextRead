@@ -13,8 +13,46 @@ from storage.cache import ApiCache
 
 
 def _normalize(value: str | None) -> str:
-    text = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    text = unicodedata.normalize("NFKC", value or "").casefold()
+    return " ".join("".join(
+        char if char.isalnum() or unicodedata.category(char).startswith("M") else " "
+        for char in text
+    ).split())
+
+
+def _candidate_year(candidate: dict[str, Any]) -> int | None:
+    date_parts = (candidate.get("published") or candidate.get("issued") or {}).get("date-parts", [])
+    return date_parts[0][0] if date_parts and date_parts[0] else None
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    return bool(phrase) and f" {phrase} " in f" {text} "
+
+
+def _score_raw_candidate(paper: ReferencePaper, candidate: dict[str, Any]) -> float:
+    """Accept unstructured citations only with a title, year and author anchor."""
+    raw = _normalize(paper.raw_reference)
+    title = _normalize((candidate.get("title") or [""])[0])
+    # Very short titles occur too often to establish identity from a citation.
+    if len(title.split()) < 4 and sum(unicodedata.east_asian_width(char) in ("W", "F") for char in title) < 12:
+        return 0.0
+    if not _contains_phrase(raw, title):
+        return 0.0
+    title_start = raw.index(title)
+    metadata = raw[:title_start] + " " + raw[title_start + len(title):]
+    year = _candidate_year(candidate)
+    if not year or (paper.year and paper.year != year):
+        return 0.0
+    if not re.search(rf"(?<!\d){year}[a-z]?(?!\w)", metadata):
+        return 0.0
+    authors = candidate.get("author") or []
+    surname = _normalize(authors[0].get("family")) if authors else ""
+    if len(surname) < 2 or not _contains_phrase(raw[:title_start], surname):
+        return 0.0
+    if paper.authors and _first_author_surname(paper.authors) != surname:
+        return 0.0
+    source = _normalize((candidate.get("container-title") or [""])[0])
+    return 0.95 + (0.05 if _contains_phrase(raw, source) else 0.0)
 
 
 def _first_author_surname(authors: list[str]) -> str:
@@ -25,12 +63,11 @@ def _first_author_surname(authors: list[str]) -> str:
 
 
 def score_candidate(paper: ReferencePaper, candidate: dict[str, Any]) -> float:
+    if not _normalize(paper.title):
+        return _score_raw_candidate(paper, candidate)
     candidate_title = (candidate.get("title") or [""])[0]
     title_score = ratio(_normalize(paper.title), _normalize(candidate_title)) / 100
-    candidate_year = None
-    date_parts = (candidate.get("published") or candidate.get("issued") or {}).get("date-parts", [])
-    if date_parts and date_parts[0]:
-        candidate_year = date_parts[0][0]
+    candidate_year = _candidate_year(candidate)
     year_score = 0.0 if not paper.year or not candidate_year else (1.0 if paper.year == candidate_year else 0.5 if abs(paper.year - candidate_year) == 1 else 0.0)
     candidate_authors = [" ".join(filter(None, [author.get("given"), author.get("family")])) for author in candidate.get("author", [])]
     author_score = ratio(_first_author_surname(paper.authors), _first_author_surname(candidate_authors)) / 100 if paper.authors and candidate_authors else 0.0
@@ -61,9 +98,9 @@ class CrossrefResolver:
         doi = normalize_doi(identifier)
         if not doi:
             title = identifier.strip()
-            if not title:
+            if not _normalize(title):
                 raise ValueError("Enter a DOI or paper title")
-            key = f"source-title:{_normalize(title)}"
+            key = f"source-title:v2:{_normalize(title)}"
             payload = self.cache.get(self.name, key, force_refresh)
             if payload is None:
                 params: dict[str, str | int] = {"query.title": title, "rows": 5}
@@ -127,7 +164,7 @@ class CrossrefResolver:
         query = paper.raw_reference or " ".join(filter(None, [paper.title, paper.source_name, str(paper.year or "")]))
         if not query.strip():
             return paper
-        key = _normalize(query)
+        key = f"bibliographic:v2:{_normalize(query)}"
         payload = self.cache.get(self.name, key, force_refresh)
         if payload is None:
             params: dict[str, str | int] = {"query.bibliographic": query, "rows": 5}
@@ -138,7 +175,14 @@ class CrossrefResolver:
         candidates = payload.get("message", {}).get("items", [])
         if not candidates:
             return paper
-        candidate, confidence = max(((item, score_candidate(paper, item)) for item in candidates), key=lambda pair: pair[1])
+        candidates = list({normalize_doi(item.get("DOI")): item for item in candidates if normalize_doi(item.get("DOI"))}.values())
+        if not candidates:
+            return paper
+        scored = sorted(((item, score_candidate(paper, item)) for item in candidates), key=lambda pair: pair[1], reverse=True)
+        candidate, confidence = scored[0]
+        if not _normalize(paper.title) and len(scored) > 1 and scored[1][1] >= 0.72 and confidence - scored[1][1] < 0.03:
+            paper.resolution_confidence = round(confidence, 3)
+            return paper
         if confidence < 0.72:
             paper.resolution_confidence = round(confidence, 3)
             return paper
@@ -154,4 +198,6 @@ class CrossrefResolver:
                 " ".join(filter(None, [author.get("given"), author.get("family")]))
                 for author in candidate.get("author", [])
             ]
+        if not paper.year:
+            paper.year = _candidate_year(candidate)
         return paper

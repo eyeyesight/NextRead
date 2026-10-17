@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field as dataclass_field
 from typing import Any
 
+from core.security import redact_data
+
 
 @dataclass
 class SeedPaper:
@@ -88,7 +90,7 @@ class ReferencePaper:
     provider_data: dict[str, Any] = dataclass_field(default_factory=dict, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return redact_data(asdict(self))
 
 
 @dataclass
@@ -100,10 +102,10 @@ class AnalysisResult:
     stats: dict[str, Any] = dataclass_field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        return redact_data({
             "seed": asdict(self.seed),
             "references": [paper.to_dict() for paper in self.references],
             "provider_states": self.provider_states,
             "warnings": self.warnings,
             "stats": self.stats,
-        }
+        })

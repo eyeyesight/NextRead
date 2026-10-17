@@ -90,3 +90,47 @@ def test_all_crossref_failures_explain_windows_network_refusal(tmp_path, monkeyp
     result = pipeline.analyze(tmp_path / "paper.pdf", {"crossref": True, "openalex": False, "semantic_scholar": False})
 
     assert any("Windows 拒絕 NextRead 連線到 Crossref" in warning for warning in result.warnings)
+
+
+def test_unmatched_semantic_seed_reports_partial_without_losing_references(monkeypatch):
+    class UnmatchedSeed:
+        def __init__(self, *args):
+            self.partial_errors = []
+            self.seed_status = "unmatched"
+            self.seed_warning = "No source identity"
+            self.seed_match_method = None
+
+        def enrich_with_seed(self, seed, papers, refresh):
+            papers[0].semantic_scholar_id = "reference"
+
+    monkeypatch.setattr("core.pipeline.SemanticScholarProvider", UnmatchedSeed)
+    pipeline = AnalysisPipeline(Settings(cache_enabled=False))
+    pipeline.grobid = FakeGrobid()
+    result = pipeline.analyze("unused.pdf", {"semantic_scholar": True})
+    assert len(result.references) == 1
+    assert result.provider_states["semantic_scholar"] == "partial"
+    assert result.stats["semantic_scholar_seed_status"] == "unmatched"
+    assert any("尚未確認原始論文" in item for item in result.warnings)
+
+
+def test_metadata_seed_match_discloses_version_limit_and_missing_embedding(monkeypatch):
+    class MetadataSeed:
+        def __init__(self, *args):
+            self.partial_errors = []
+            self.seed_status = "resolved"
+            self.seed_warning = "No embedding"
+            self.seed_match_method = "metadata"
+
+        def enrich_with_seed(self, seed, papers, refresh):
+            papers[0].semantic_scholar_id = "reference"
+            papers[0].is_influential_citation = True
+
+    monkeypatch.setattr("core.pipeline.SemanticScholarProvider", MetadataSeed)
+    pipeline = AnalysisPipeline(Settings(cache_enabled=False))
+    pipeline.grobid = FakeGrobid()
+    result = pipeline.analyze("unused.pdf", {"semantic_scholar": True})
+    assert result.references[0].influential_citation_score == 1.0
+    assert result.stats["semantic_scholar_seed_match"] == "metadata"
+    assert any("尚未確認 PDF 與該出版版本一致" in item for item in result.warnings)
+    assert any("未提供原始論文的語意向量" in item for item in result.warnings)
+    assert not any("無法計算語意相似度與具影響力引用" in item for item in result.warnings)

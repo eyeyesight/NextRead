@@ -43,3 +43,35 @@ def test_refresh_option_explains_cache_and_api_cost():
     assert any("不使用快取" in label for label in labels)
     assert "API 額度" in captions
     assert not app.exception
+
+
+def test_sjr_content_change_invalidates_results_even_in_same_year(tmp_path, monkeypatch):
+    from core.models import ReferencePaper, SeedPaper
+    from resolvers.crossref import CrossrefResolver
+    from tests.test_sjr import SJR_CSV
+
+    path = tmp_path / "scimagojr 2024.csv"
+    path.write_text(SJR_CSV, encoding="utf-8")
+    monkeypatch.setenv("SJR_DATA_PATH", str(path))
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (
+        SeedPaper(title="Source"), [ReferencePaper(title="Reference", source_name="Journal of Motor Learning")]
+    ))
+    app = AppTest.from_file(APP_PATH, default_timeout=15).run()
+    app.radio[0].set_value("parser").run()
+    app.text_input[0].set_value("Source").run()
+    next(button for button in app.button if button.label == "開始分析").click().run()
+    assert app.session_state["result"].references[0].sjr_quartile == "Q1"
+
+    # Invalid CSV upload must not replace the original or discard the result.
+    app.file_uploader(key="sjr_update_file").upload("invalid.csv", b"invalid;header\n", "text/csv").run()
+    next(button for button in app.button if button.label == "驗證並更新 SJR 資料").click().run()
+    assert app.session_state["result"].references[0].sjr_quartile == "Q1"
+    assert path.read_text(encoding="utf-8") == SJR_CSV
+
+    path.write_text(SJR_CSV.replace("Q1", "Q2"), encoding="utf-8")
+    app.run()
+    assert "result" not in app.session_state
+    assert any("輸入或分析設定已變更" in item.value for item in app.info)
+    next(button for button in app.button if button.label == "開始分析").click().run()
+    assert app.session_state["result"].references[0].sjr_quartile == "Q2"
+    assert not app.exception

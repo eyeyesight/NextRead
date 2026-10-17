@@ -188,3 +188,29 @@ def test_grobid_source_lookup_failure_never_accepts_known_mismatched_pdf(tmp_pat
 
     with pytest.raises(ValueError, match="PDF"):
         pipeline.analyze_identifier(identifier, ENABLED, pdf_path=tmp_path / "wrong.pdf", use_grobid=True)
+
+
+@pytest.mark.parametrize("identifier", ["", "A valid source paper title", "10.1000/unverified"])
+@pytest.mark.parametrize("error", [ValueError("No source found"), NetworkAccessError("blocked source lookup")])
+def test_local_pdf_extraction_survives_source_lookup_failure(tmp_path, monkeypatch, identifier, error):
+    pipeline = AnalysisPipeline(Settings(cache_enabled=False))
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (_ for _ in ()).throw(error))
+    monkeypatch.setattr("core.pipeline.verified_seed_doi", lambda *args: None)
+    monkeypatch.setattr("core.pipeline.pdf_title_hints", lambda *args: ["A valid source paper title"])
+    monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: True)
+    monkeypatch.setattr("core.pipeline.extract_numbered_references", lambda *args: [ReferencePaper(title="Extracted local reference")])
+    result = pipeline.analyze_identifier(identifier, ENABLED, pdf_path=tmp_path / "source.pdf")
+    assert len(result.references) == 1
+    assert result.stats["reference_source"] == "numbered_pdf_text"
+    assert result.stats["source_lookup"] == "unavailable"
+    assert result.seed.doi is None
+    assert result.warnings
+
+
+def test_local_pdf_fallback_rejects_a_different_entered_title(tmp_path, monkeypatch):
+    pipeline = AnalysisPipeline(Settings(cache_enabled=False))
+    monkeypatch.setattr(CrossrefResolver, "source_work", lambda *args: (_ for _ in ()).throw(ValueError("not found")))
+    monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: False)
+    monkeypatch.setattr("core.pipeline.extract_numbered_references", lambda *args: [ReferencePaper(title="Reference")])
+    with pytest.raises(ValueError, match="matches the entered title"):
+        pipeline.analyze_identifier("A different entered title", ENABLED, pdf_path=tmp_path / "source.pdf")

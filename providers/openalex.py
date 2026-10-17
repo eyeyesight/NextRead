@@ -4,6 +4,7 @@ from statistics import median
 from typing import Any
 
 from core.models import ReferencePaper
+from core.security import redact_text
 from providers.base import Capability, DataProvider
 from providers.http import HttpClient
 from storage.cache import ApiCache
@@ -18,6 +19,7 @@ class OpenAlexProvider(DataProvider):
         self.api_key = api_key
         self.mailto = mailto
         self.http = HttpClient()
+        self._analysis_entities: dict[str, dict[str, Any] | Exception] | None = None
 
     def is_available(self) -> bool:
         return True
@@ -42,22 +44,37 @@ class OpenAlexProvider(DataProvider):
 
     def _get(self, entity: str, identifier: str, force_refresh: bool) -> dict[str, Any]:
         key = f"{entity}:{identifier}"
-        cached = self.cache.get(self.name, key, force_refresh)
-        if cached is not None:
-            return cached
-        payload = self.http.get_json(f"{self.base_url}/{entity}/{identifier}", params=self._params())
-        self.cache.set(self.name, key, payload)
+        if self._analysis_entities is not None and key in self._analysis_entities:
+            previous = self._analysis_entities[key]
+            if isinstance(previous, Exception):
+                raise previous
+            return previous
+        try:
+            payload = self.cache.get(self.name, key, force_refresh)
+            if payload is None:
+                payload = self.http.get_json(f"{self.base_url}/{entity}/{identifier}", params=self._params())
+                self.cache.set(self.name, key, payload)
+        except Exception as exc:
+            if self._analysis_entities is not None:
+                self._analysis_entities[key] = exc
+            raise
+        if self._analysis_entities is not None:
+            self._analysis_entities[key] = payload
         return payload
 
     def enrich(self, papers: list[ReferencePaper], force_refresh: bool = False) -> None:
-        for paper in papers:
-            if not paper.doi:
-                continue
-            try:
-                work = self._get("works", f"https://doi.org/{paper.doi}", force_refresh)
-                self._apply_work(paper, work, force_refresh)
-            except Exception as exc:
-                paper.provider_data["openalex_error"] = str(exc)
+        self._analysis_entities = {}
+        try:
+            for paper in papers:
+                if not paper.doi:
+                    continue
+                try:
+                    work = self._get("works", f"https://doi.org/{paper.doi}", force_refresh)
+                    self._apply_work(paper, work, force_refresh)
+                except Exception as exc:
+                    paper.provider_data["openalex_error"] = redact_text(str(exc), (self.api_key,))
+        finally:
+            self._analysis_entities = None
 
     def _apply_work(self, paper: ReferencePaper, work: dict[str, Any], force_refresh: bool) -> None:
         paper.provider_data["openalex"] = work
@@ -101,7 +118,7 @@ class OpenAlexProvider(DataProvider):
                     if h_index is not None:
                         h_indices.append(int(h_index))
                 except Exception as exc:
-                    paper.provider_data.setdefault("openalex_author_errors", []).append(str(exc))
+                    paper.provider_data.setdefault("openalex_author_errors", []).append(redact_text(str(exc), (self.api_key,)))
             paper.author_h_indices = h_indices
             paper.author_metadata_coverage = len(h_indices) / len(authorships)
             if h_indices:

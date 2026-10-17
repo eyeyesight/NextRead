@@ -15,6 +15,7 @@ import streamlit as st
 from core.config import load_settings
 from core.models import AnalysisResult, ReferencePaper
 from core.pipeline import AnalysisPipeline
+from core.security import RedactingFormatter, redact_text
 from parsers.grobid_service import GrobidUnavailableError, check_grobid_ready
 
 
@@ -34,7 +35,9 @@ APP_DIR = Path(__file__).resolve().parent
 CRITERIA_GUIDE_PATH = APP_DIR / "criteria_intro.md"
 
 Path("logs").mkdir(exist_ok=True)
-logging.basicConfig(level=logging.INFO, handlers=[logging.FileHandler("logs/app.log", encoding="utf-8")])
+log_handler = logging.FileHandler("logs/app.log", encoding="utf-8")
+log_handler.setFormatter(RedactingFormatter("%(levelname)s:%(name)s:%(message)s"))
+logging.basicConfig(level=logging.INFO, handlers=[log_handler])
 st.set_page_config(
     page_title="NextRead",
     page_icon=str(APP_DIR / "assets" / "nextread-icon.png"),
@@ -667,6 +670,7 @@ analysis_inputs = (
     identifier.strip(),
     (uploaded.name, hashlib.sha256(uploaded.getbuffer()).hexdigest()) if uploaded else None,
     use_grobid, crossref, openalex, semantic_scholar, force_refresh,
+    pipeline.sjr.version,
 )
 previous_inputs = st.session_state.get("analysis_inputs", analysis_inputs)
 if previous_inputs != analysis_inputs and "result" in st.session_state:
@@ -722,7 +726,9 @@ if st.button(t("開始分析", "Start analysis"), type="primary", disabled=not (
         grobid_metric.metric("GROBID", t("未就緒", "Not ready"))
         st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
     except Exception as exc:
-        logging.exception("Analysis request %s failed", analysis_id); st.error(t(f"無法完成分析：{exc}", f"Analysis could not be completed: {exc}"))
+        logging.exception("Analysis request %s failed", analysis_id)
+        detail = redact_text(str(exc))
+        st.error(t(f"無法完成分析：{detail}", f"Analysis could not be completed: {detail}"))
     finally:
         if path:
             path.unlink(missing_ok=True)
@@ -755,7 +761,7 @@ if result:
     summary[4].metric("S2 Coverage", f"{result.stats['semantic_scholar_coverage']} / {result.stats['references_extracted']}")
     summary[5].metric(t("有效計分面向", "Active dimensions"), f"{result.stats['active_dimensions']} / 6")
     for warning in result.warnings:
-        st.warning(warning)
+        st.warning(redact_text(warning))
     has_ranking = result.stats["active_dimensions"] > 0
     if has_ranking:
         performance_charts(result.references)

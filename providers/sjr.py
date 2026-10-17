@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import re
 import unicodedata
 from pathlib import Path
@@ -31,6 +32,7 @@ class SjrProvider:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.year = self._year_from_name(self.path.name)
+        self.version: str | None = None
         self.by_issn: dict[str, dict[str, str]] = {}
         self.by_title: dict[str, dict[str, str]] = {}
         if self.path.is_file():
@@ -46,10 +48,12 @@ class SjrProvider:
         return int(match.group()) if match else None
 
     def _load(self) -> None:
+        raw = self.path.read_bytes()
+        self.version = hashlib.sha256(raw).hexdigest()
         try:
-            content = self.path.read_text(encoding="utf-8-sig")
+            content = raw.decode("utf-8-sig")
         except UnicodeDecodeError:
-            content = self.path.read_text(encoding="latin-1")
+            content = raw.decode("latin-1")
         reader = csv.DictReader(content.splitlines(), delimiter=";")
         header_years = [
             int(match.group(1))

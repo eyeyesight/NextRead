@@ -109,6 +109,8 @@ NextRead 無法自行解除作業系統的限制。遇到 `10013` 時，本次�
 
 完成初次安裝後，執行 `start-nextread.cmd` 即可啟動 NextRead，並在預設瀏覽器開啟 <http://localhost:8501>。啟動器不會開啟 Docker。若要使用 GROBID，請自行開啟 Docker Desktop，並在專案資料夾執行 `docker compose up -d grobid`。勾選介面中的「使用 GROBID 解析 PDF」時，NextRead 只會檢查 Docker、GROBID 容器和 API 是否就緒；若尚未就緒，處理畫面提示的問題後，可按「重新檢查 GROBID」。Docker Compose 專案名稱固定為 `nextread`（Compose 不接受大寫），容器通常名為 `nextread-grobid-1`，不再隨資料夾名稱變動。
 
+啟動器重新啟動網站前，會核對程序的啟動參數、專案位置與建立時間，不會結束同一 Python 環境中的其他腳本。更新後第一次啟動，若舊版網站仍占用 8501 連接埠，可能需要依提示的 PID 自行關閉舊網站，再開啟 `start-nextread.cmd`；不必停止 Docker 或 GROBID。
+
 選用 GROBID 時須同時上傳 PDF，參考文獻會以 PDF 抽取結果為主。全文解析沒有抽出文獻時，NextRead 會再用 GROBID 的參考文獻專用接口嘗試一次；若仍為空或解析失敗，畫面會顯示錯誤，不會以 Crossref 的空清單宣告分析完成。
 
 同時填寫標題或 DOI 時，NextRead 會先用 GROBID 解析 PDF，再向 Crossref 核對原始論文資料。若 Crossref 查詢失敗，仍保留 PDF 的抽取結果並提示未完成核對；若已確認標題或 DOI 與 PDF 不符，則會停止分析，避免混用不同論文。
@@ -155,11 +157,10 @@ streamlit run app.py
 ## 分析流程
 
 ```text
-Paper DOI or title
-    ↓
-Crossref publisher-deposited references
-    ↓
-Optional PDF DOI comparison or PDF reference extraction
+DOI or title → Crossref publisher-deposited references ─┐
+PDF → Local extraction or optional GROBID ─────────────┤
+                                                      ↓
+                                  Source metadata and reference list
     ↓
 OpenAlex bibliometrics and local citation graph
     ↓
@@ -169,6 +170,12 @@ Capability-aware ranking
     ↓
 Reading Priority and Evidence Coverage
 ```
+
+Crossref 找不到原始論文時，若有上傳 PDF，仍會嘗試抽取參考文獻。本機解析器目前支援編號式參考文獻，不支援的格式可改用 GROBID；原始論文身分尚未確認時會顯示提示，不會把未核對的 DOI 當成 PDF 的 DOI。
+
+只有整段文字的參考文獻，會以候選標題、年份與第一作者核對，資料不足或多筆候選同樣符合時保留為未確認。標題搜尋與快取保留中文等非拉丁文字，更新後會重新建立搜尋快取，原有 DOI 資料仍可使用。
+
+完整分析若缺少原始論文 DOI，會用標題、作者與可用年份尋找唯一符合的 Semantic Scholar 正式發表紀錄，並提示尚未核對 PDF 版本。預印本、歧義或資訊衝突的紀錄不會直接套用，無法確認原始論文或缺少語意向量時也會說明哪些指標無法計算。
 
 ## 分析模式
 
@@ -281,6 +288,8 @@ NextRead/
 
 請勿把 CSV 放在專案根目錄或上傳至 GitHub。每位使用者須自行下載，再透過「進階設定 → 手動更新 SJR 資料」安裝，或放到上述路徑。若檔名、年份或路徑不同，請在 `.env` 設定 `SJR_DATA_PATH`。
 
+SJR 更新成功後，舊分析結果會失效，請重新分析以取得新分區；同年度的內容更新也會重新辨識。檔案未通過檢查時，原資料與分析結果會保留。
+
 ## API 與本機設定
 
 計分權重寫在 `config/settings.yaml`；API 與檔案路徑則設定在 `.env`。
@@ -318,6 +327,8 @@ GROBID_URL=http://localhost:8070
 儲存 `.env` 後重新啟動 NextRead，不要將 `.env`、API Key 或其他憑證提交到 Git。
 
 API 回應預設快取 30 天，內容保存在 `data/cache.db`。「重新查詢外部 API（不使用快取）」只影響這次分析：略過現有的 Crossref、OpenAlex 和 Semantic Scholar 快取，重新查詢已啟用的服務並更新快取。查詢可能較慢，也會消耗 API 額度；原有快取不會整批清除。畫面會顯示 OpenAlex 與 Semantic Scholar 是否啟用，以及各自的 API Key 是否載入，但不會顯示 Key 值。顯示「API Key 已載入」不代表 Key 已驗證有效；服務未啟用或結果命中快取時，也不會使用該 Key 發出新請求。Semantic Scholar 使用 `x-api-key` HTTP 標頭，不需額外執行授權流程；金鑰只存在各電腦自己的 `.env` 中，不會隨 GitHub 複製。
+
+強制更新時，同次分析遇到相同 OpenAlex 作者或期刊只查詢一次，下一次分析仍會重新取得資料。API 錯誤訊息、日誌與匯出資料會遮蔽密鑰；更新程式不會改寫先前已產生的日誌或匯出檔。
 
 ## 開發與驗證
 

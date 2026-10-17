@@ -5,6 +5,8 @@ import time
 from urllib.parse import urlsplit
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from core.security import redact_text
+
 
 class RateLimitedError(requests.RequestException):
     pass
@@ -36,11 +38,19 @@ class HttpClient:
         host = urlsplit(url).hostname or "外部服務"
         if host in self.blocked_hosts:
             raise NetworkAccessError(self.blocked_hosts[host])
+        credentials = [value for key, value in self.session.headers.items() if key.lower() in {"x-api-key", "authorization"}]
+        credentials.extend(value for key, value in (kwargs.get("params") or {}).items() if key.lower() in {"api_key", "api-key", "token", "access_token"})
         try:
-            return getattr(self.session, method)(url, timeout=self.timeout, **kwargs)
-        except requests.ConnectionError as exc:
-            if "WinError 10013" not in str(exc):
-                raise
+            response = getattr(self.session, method)(url, timeout=self.timeout, **kwargs)
+            if response.status_code == 429:
+                raise RateLimitedError(f"Rate limited by {url}", response=response)
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            if not isinstance(exc, requests.ConnectionError) or "WinError 10013" not in str(exc):
+                # Preserve the response for provider-specific handling, but never
+                # propagate a credential-bearing exception message or traceback.
+                raise type(exc)(redact_text(str(exc), credentials), response=exc.response) from None
             service = {
                 "api.crossref.org": "Crossref",
                 "api.openalex.org": "OpenAlex",
@@ -50,7 +60,7 @@ class HttpClient:
                 f"Windows 拒絕 NextRead 連線到 {service}；請從檔案總管開啟 check-nextread.cmd 檢查連線，"
                 "再確認防火牆、代理伺服器或防毒軟體的 Python 網路權限。"
             )
-            raise NetworkAccessError(self.blocked_hosts[host]) from exc
+            raise NetworkAccessError(self.blocked_hosts[host]) from None
 
     @retry(
         retry=retry_if_exception_type((requests.ConnectionError, requests.Timeout, RateLimitedError)),
@@ -62,9 +72,6 @@ class HttpClient:
         self._pace()
         self.request_count += 1
         response = self._request("get", url, **kwargs)
-        if response.status_code == 429:
-            raise RateLimitedError(f"Rate limited by {url}", response=response)
-        response.raise_for_status()
         return response.json()
 
     @retry(
@@ -77,7 +84,4 @@ class HttpClient:
         self._pace()
         self.request_count += 1
         response = self._request("post", url, **kwargs)
-        if response.status_code == 429:
-            raise RateLimitedError(f"Rate limited by {url}", response=response)
-        response.raise_for_status()
         return response.json()

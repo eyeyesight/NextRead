@@ -7,7 +7,8 @@ from pathlib import Path
 import requests
 
 from core.config import Settings
-from core.models import AnalysisResult
+from core.models import AnalysisResult, SeedPaper
+from core.security import redact_text
 from core.ranking import rank_papers
 from graph.local_citation_graph import build_local_graph
 from parsers.grobid import GrobidClient, normalize_doi
@@ -75,6 +76,27 @@ class AnalysisPipeline:
         if use_grobid and pdf_path is None:
             raise ValueError("使用 GROBID 解析時，請先上傳 PDF；只有 DOI 或標題無法進行 PDF 解析。")
         resolver = CrossrefResolver(self.cache, self.settings.crossref_mailto)
+
+        def local_pdf_result() -> AnalysisResult:
+            update(2, "正在從 PDF 抽取參考文獻" if language == "zh-TW" else "Extracting PDF references")
+            references = extract_numbered_references(pdf_path)
+            input_doi = normalize_doi(identifier)
+            if identifier.strip() and not input_doi and not pdf_matches_seed(pdf_path, identifier):
+                raise ValueError("Could not confirm that this PDF matches the entered title")
+            hints = pdf_title_hints(pdf_path)
+            title = next((hint for hint in hints if pdf_matches_seed(pdf_path, hint)), None)
+            if identifier.strip() and not input_doi:
+                title = identifier.strip()
+            # An unverified input DOI must not become the PDF's identity.
+            result = self._finish(SeedPaper(title=title), references, enabled, force_refresh, progress, language, "numbered_pdf_text")
+            result.stats["source_lookup"] = "unavailable"
+            result.warnings.insert(0, (
+                "Crossref 未能確認原始論文，這次使用 PDF 抽出的參考文獻；原始論文身分與清單完整性仍需核對。"
+                if language == "zh-TW" else
+                "Crossref could not verify the source paper. References were extracted from the PDF; source identity and list completeness remain unverified."
+            ))
+            return result
+
         grobid_document = None
         if use_grobid and identifier.strip():
             update(1, "正在用 GROBID 解析 PDF" if language == "zh-TW" else "Parsing PDF with GROBID")
@@ -100,10 +122,10 @@ class AnalysisPipeline:
                         if pdf_matches_seed(pdf_path, candidate.title):
                             identifier = candidate.doi or ""
                             break
-                    except ValueError:
+                    except (ValueError, requests.RequestException):
                         continue
                 if not identifier:
-                    raise ValueError("Could not verify the source paper from PDF; enter its DOI or title")
+                    return local_pdf_result()
         if grobid_document is not None:
             update(2, "正在核對原始論文資料" if language == "zh-TW" else "Checking source paper metadata")
         else:
@@ -112,6 +134,8 @@ class AnalysisPipeline:
             seed, papers = resolver.source_work(identifier, force_refresh)
         except (ValueError, requests.RequestException) as exc:
             if grobid_document is None:
+                if pdf_path is not None:
+                    return local_pdf_result()
                 raise
             seed, papers = grobid_document
             input_doi = normalize_doi(identifier)
@@ -150,7 +174,7 @@ class AnalysisPipeline:
             except Exception as exc:
                 if use_grobid:
                     raise
-                comparison_error = str(exc)
+                comparison_error = redact_text(str(exc))
                 pdf_references = None
                 extraction = None
         reference_source = "crossref"
@@ -224,6 +248,8 @@ class AnalysisPipeline:
 
         states = {provider: "disabled" for provider in ("crossref", "openalex", "semantic_scholar")}
         warnings: list[str] = []
+        semantic_seed_status = None
+        semantic_seed_match = None
         logger.info("Analysis started: %s", seed.doi or seed.title)
         logger.info("Extracted %d references", len(papers))
 
@@ -237,7 +263,7 @@ class AnalysisPipeline:
                     resolver.resolve(paper, force_refresh)
                 except Exception as exc:
                     failures += 1
-                    paper.provider_data["crossref_error"] = str(exc)
+                    paper.provider_data["crossref_error"] = redact_text(str(exc))
             if failures:
                 states["crossref"] = "partial" if failures < len(papers) else "failed"
                 warnings.append(message(f"Crossref 有 {failures} 篇參考文獻查詢失敗；未辨識的項目仍保留在清單中。", f"Crossref failed for {failures} references; unresolved items were retained.") + network_hint("crossref_error"))
@@ -254,25 +280,47 @@ class AnalysisPipeline:
                     warnings.append(message(f"{attempted} 篇有 DOI 的文獻中，有 {failures} 篇未能從 OpenAlex 取得資料。", f"OpenAlex failed for {failures} of {attempted} references with a DOI.") + network_hint("openalex_error"))
             except Exception as exc:
                 states["openalex"] = "failed"
-                warnings.append(message(f"目前無法取得 OpenAlex 資料；排名會使用其他已取得的資料。（{exc}）", f"OpenAlex is unavailable; ranking uses the remaining data. ({exc})"))
+                detail = redact_text(str(exc), (self.settings.openalex_api_key,))
+                warnings.append(message(f"目前無法取得 OpenAlex 資料；排名會使用其他已取得的資料。（{detail}）", f"OpenAlex is unavailable; ranking uses the remaining data. ({detail})"))
 
         if enabled.get("semantic_scholar"):
             update(5, message("正在取得 Semantic Scholar 資料", "Fetching Semantic Scholar data"))
             provider = SemanticScholarProvider(self.cache, self.settings.semantic_scholar_api_key)
             try:
                 provider.enrich_with_seed(seed, papers, force_refresh)
+                semantic_seed_status = getattr(provider, "seed_status", None)
+                semantic_seed_match = getattr(provider, "seed_match_method", None)
                 if provider.partial_errors:
                     states["semantic_scholar"] = "partial" if any(paper.semantic_scholar_id for paper in papers) else "failed"
-                    detail = provider.partial_errors[0]
+                    detail = redact_text(provider.partial_errors[0], (self.settings.semantic_scholar_api_key,))
                     warnings.append(message(
                         f"部分 Semantic Scholar 查詢失敗；已取得的資料仍會保留，缺少的語意與影響力指標不計分。（{detail}）",
                         f"Some Semantic Scholar queries failed; available data was retained, and missing semantic and influential-citation signals were excluded. ({detail})",
                     ))
                 else:
                     states["semantic_scholar"] = "success"
+                if getattr(provider, "seed_warning", None):
+                    if states["semantic_scholar"] == "success":
+                        states["semantic_scholar"] = "partial"
+                    if semantic_seed_status == "resolved":
+                        warnings.append(message(
+                            "Semantic Scholar 未提供原始論文的語意向量，無法計算語意相似度；其他已取得的指標仍會保留。",
+                            "Semantic Scholar has no source-paper embedding, so semantic similarity is unavailable. Other available signals were retained.",
+                        ))
+                    else:
+                        warnings.append(message(
+                            "Semantic Scholar 尚未確認原始論文，無法計算語意相似度與具影響力引用；已取得的參考文獻資料仍會保留。",
+                            "Semantic Scholar could not verify the source paper, so semantic similarity and influential-citation signals are unavailable. Available reference metadata was retained.",
+                        ))
+                if semantic_seed_match == "metadata":
+                    warnings.append(message(
+                        "Semantic Scholar 原始論文依標題與作者比對，尚未確認 PDF 與該出版版本一致。",
+                        "The Semantic Scholar source paper was matched by title and authors; agreement with the PDF publication version remains unverified.",
+                    ))
             except Exception as exc:
                 states["semantic_scholar"] = "failed"
-                warnings.append(message(f"目前無法取得 Semantic Scholar 資料；語意相關指標不計分。（{exc}）", f"Semantic Scholar is unavailable; semantic metrics were excluded. ({exc})"))
+                detail = redact_text(str(exc), (self.settings.semantic_scholar_api_key,))
+                warnings.append(message(f"目前無法取得 Semantic Scholar 資料；語意相關指標不計分。（{detail}）", f"Semantic Scholar is unavailable; semantic metrics were excluded. ({detail})"))
 
         self.sjr.enrich(papers)
 
@@ -306,6 +354,10 @@ class AnalysisPipeline:
             "graph_edges": graph.number_of_edges(),
             "cache_hits": self.cache.hits,
             "cache_misses": self.cache.misses,
+            "sjr_version": self.sjr.version,
         }
+        if semantic_seed_status:
+            stats["semantic_scholar_seed_status"] = semantic_seed_status
+            stats["semantic_scholar_seed_match"] = semantic_seed_match
         logger.info("Analysis complete: %s", stats)
         return AnalysisResult(seed, papers, states, warnings, stats)

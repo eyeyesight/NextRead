@@ -6,8 +6,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $projectPath = $PSScriptRoot
-$streamlitPath = Join-Path $projectPath ".venv\Scripts\streamlit.exe"
 $pythonPath = Join-Path $projectPath ".venv\Scripts\python.exe"
+$appPath = Join-Path $projectPath "app.py"
 $appUrl = "http://localhost:8501"
 $logPath = Join-Path $projectPath "logs"
 $launcherLog = Join-Path $logPath "launcher.log"
@@ -35,28 +35,82 @@ function Test-HttpEndpoint {
     }
 }
 
+function Get-NextReadStartTime {
+    param($Process)
+    if (-not $Process.CreationDate) { return "" }
+    return ([datetime]$Process.CreationDate).ToUniversalTime().Ticks.ToString()
+}
+
+function Test-NextReadProcess {
+    param($Process, [string]$PythonPath, [string]$AppPath, [string]$ExpectedStartTime = "")
+    if (-not $Process -or $Process.ExecutablePath -ne $PythonPath) { return $false }
+    $startTime = Get-NextReadStartTime $Process
+    if (-not $startTime -or ($ExpectedStartTime -and $startTime -ne $ExpectedStartTime)) { return $false }
+    $executable = [regex]::Escape($PythonPath)
+    $application = [regex]::Escape($AppPath)
+    $command = '^\s*(?:"' + $executable + '"|' + $executable + ')\s+-m\s+streamlit\s+run\s+"' + $application + '"\s+--server.port\s+8501\s+--server.headless\s+true\s*$'
+    return $Process.CommandLine -imatch $command
+}
+
+function Get-NextReadPortOwners {
+    return @(Get-NetTCPConnection -State Listen -ErrorAction Stop |
+        Where-Object { $_.LocalPort -eq 8501 } |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+}
+
+function Wait-NextReadProcess {
+    param([int]$ProcessId, [string]$PythonPath, [string]$AppPath)
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId"
+        if (Test-NextReadProcess $process $PythonPath $AppPath) { return $process }
+        Start-Sleep -Milliseconds 100
+    }
+    return $null
+}
+
 function Stop-ExistingStreamlit {
-    Write-LauncherStatus "正在重新啟動 NextRead..."
-    $processIds = @()
+    $savedProcess = $null
 
     if (Test-Path -LiteralPath $streamlitPidPath) {
-        $savedPid = 0
-        if ([int]::TryParse((Get-Content -LiteralPath $streamlitPidPath -Raw).Trim(), [ref]$savedPid)) {
-            $processIds += $savedPid
+        try { $savedProcess = Get-Content -LiteralPath $streamlitPidPath -Raw | ConvertFrom-Json }
+        catch { $savedProcess = $null }
+    }
+
+    $pythonProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe'")
+    $projectProcesses = @($pythonProcesses |
+        Where-Object {
+            $expectedStart = ""
+            if ($savedProcess -and $_.ProcessId -eq $savedProcess.ProcessId) {
+                $expectedStart = [string]$savedProcess.StartTime
+                if (-not $expectedStart) { return $false }
+            }
+            Test-NextReadProcess $_ $pythonPath $appPath $expectedStart
+        })
+    # Windows venv launchers can forward execution to a base Python child.
+    $childProcesses = @($pythonProcesses | Where-Object {
+        $child = $_
+        $parent = $projectProcesses | Where-Object { $_.ProcessId -eq $child.ParentProcessId } | Select-Object -First 1
+        $parent -and $child.CreationDate -ge $parent.CreationDate -and
+            (Test-NextReadProcess $child $child.ExecutablePath $appPath)
+    })
+    $projectProcesses = @($childProcesses) + @($projectProcesses)
+    foreach ($ownerId in (Get-NextReadPortOwners)) {
+        if ($ownerId -notin $projectProcesses.ProcessId) {
+            throw "8501 連接埠已被其他程式或舊版網站占用（PID：$ownerId）。請自行關閉該程式後重試，NextRead 不會代為結束。"
         }
     }
 
-    $projectProcesses = Get-Process -Name "python", "streamlit" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -eq $pythonPath -or $_.Path -eq $streamlitPath }
-    $processIds += $projectProcesses.Id
-
-    foreach ($processId in ($processIds | Sort-Object -Unique)) {
-        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    if ($projectProcesses.Count) { Write-LauncherStatus "正在重新啟動 NextRead..." }
+    foreach ($process in $projectProcesses) {
+        $current = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.ProcessId)"
+        if (Test-NextReadProcess $current $process.ExecutablePath $appPath (Get-NextReadStartTime $process)) {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+        }
     }
     Remove-Item -LiteralPath $streamlitPidPath -Force -ErrorAction SilentlyContinue
 
     for ($attempt = 0; $attempt -lt 20; $attempt++) {
-        if (-not (Test-HttpEndpoint "$appUrl/_stcore/health")) {
+        if (-not (Get-NextReadPortOwners)) {
             return
         }
         Start-Sleep -Milliseconds 250
@@ -68,18 +122,23 @@ try {
     Set-Location -LiteralPath $projectPath
     Write-LauncherStatus "正在啟動 NextRead..." Cyan
 
-    if (-not (Test-Path -LiteralPath $streamlitPath)) {
-        throw "找不到 Streamlit：$streamlitPath"
+    if (-not (Test-Path -LiteralPath $pythonPath)) {
+        throw "找不到 Python：$pythonPath"
     }
     Stop-ExistingStreamlit
-    $streamlitProcess = Start-Process -FilePath $streamlitPath `
-        -ArgumentList @("run", "app.py", "--server.port", "8501", "--server.headless", "true") `
+    $streamlitProcess = Start-Process -FilePath $pythonPath `
+        -ArgumentList @("-m", "streamlit", "run", ('"{0}"' -f $appPath), "--server.port", "8501", "--server.headless", "true") `
         -WorkingDirectory $projectPath `
         -WindowStyle Hidden `
         -RedirectStandardOutput (Join-Path $logPath "streamlit-launcher.out.log") `
         -RedirectStandardError (Join-Path $logPath "streamlit-launcher.err.log") `
         -PassThru
-    Set-Content -LiteralPath $streamlitPidPath -Value $streamlitProcess.Id -Encoding ASCII
+    $startedProcess = Wait-NextReadProcess $streamlitProcess.Id $pythonPath $appPath
+    if (-not $startedProcess) {
+        throw "無法確認 NextRead 啟動程序，請查看 logs 資料夾中的啟動紀錄。"
+    }
+    @{ ProcessId = $startedProcess.ProcessId; StartTime = (Get-NextReadStartTime $startedProcess) } |
+        ConvertTo-Json | Set-Content -LiteralPath $streamlitPidPath -Encoding ASCII
 
     $appReady = $false
     for ($attempt = 0; $attempt -lt 45; $attempt++) {
