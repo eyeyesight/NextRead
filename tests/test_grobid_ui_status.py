@@ -139,7 +139,8 @@ def test_switch_from_empty_title_search_to_grobid_clears_stale_result(monkeypatc
     monkeypatch.setattr("core.pipeline.pdf_matches_seed", lambda *args: True)
     monkeypatch.setattr("parsers.grobid_service.check_grobid_ready", lambda *args, **kwargs: None)
     app = AppTest.from_file(Path(__file__).resolve().parents[1] / "app.py", default_timeout=15).run()
-    app.radio[0].set_value("parser").run()
+    for label in ("Crossref 逐筆書目辨識", "OpenAlex", "Semantic Scholar"):
+        next(item for item in app.checkbox if item.label == label).set_value(False).run()
     app.text_input[0].set_value(title).run()
     next(button for button in app.button if button.label == "開始分析").click().run()
     assert app.session_state["result"].stats["references_extracted"] == 0

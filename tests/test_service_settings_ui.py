@@ -12,7 +12,7 @@ def test_api_key_feedback_describes_configuration_without_revealing_keys(monkeyp
     app = AppTest.from_file(APP_PATH, default_timeout=15).run()
     metrics = {item.label: item.value for item in app.metric}
     assert metrics["OpenAlex"] == "已啟用"
-    assert metrics["Semantic Scholar"] == "未啟用"
+    assert metrics["Semantic Scholar"] == "已啟用"
     assert "OpenAlex API Key" not in metrics
     assert "Semantic Scholar API Key" not in metrics
     captions = "\n".join(item.value for item in app.caption)
@@ -27,7 +27,6 @@ def test_api_key_metrics_distinguish_missing_keys_from_enabled_services(monkeypa
     monkeypatch.setenv("OPENALEX_API_KEY", "")
     monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "")
     app = AppTest.from_file(APP_PATH, default_timeout=15).run()
-    app.radio[0].set_value("complete").run()
     metrics = {item.label: item.value for item in app.metric}
     assert metrics["OpenAlex"] == "已啟用"
     assert metrics["Semantic Scholar"] == "已啟用"
@@ -57,7 +56,8 @@ def test_sjr_content_change_invalidates_results_even_in_same_year(tmp_path, monk
         SeedPaper(title="Source"), [ReferencePaper(title="Reference", source_name="Journal of Motor Learning")]
     ))
     app = AppTest.from_file(APP_PATH, default_timeout=15).run()
-    app.radio[0].set_value("parser").run()
+    for label in ("Crossref 逐筆書目辨識", "OpenAlex", "Semantic Scholar"):
+        next(item for item in app.checkbox if item.label == label).set_value(False).run()
     app.text_input[0].set_value("Source").run()
     next(button for button in app.button if button.label == "開始分析").click().run()
     assert app.session_state["result"].references[0].sjr_quartile == "Q1"
@@ -74,4 +74,29 @@ def test_sjr_content_change_invalidates_results_even_in_same_year(tmp_path, monk
     assert any("輸入或分析設定已變更" in item.value for item in app.info)
     next(button for button in app.button if button.label == "開始分析").click().run()
     assert app.session_state["result"].references[0].sjr_quartile == "Q2"
+    assert not app.exception
+
+
+def test_services_default_enabled_and_can_be_disabled_individually(monkeypatch):
+    from core.pipeline import AnalysisPipeline
+
+    requests = []
+
+    def analyze(self, identifier, enabled, *args):
+        requests.append(enabled.copy())
+        return None
+
+    monkeypatch.setattr(AnalysisPipeline, "analyze_identifier", analyze)
+    app = AppTest.from_file(APP_PATH, default_timeout=15).run()
+    assert not any(item.label in ("分析模式", "Analysis mode") for item in app.radio)
+    app.text_input[0].set_value("A source paper title").run()
+    next(button for button in app.button if button.label == "開始分析").click().run()
+    assert requests[-1] == {"crossref": True, "openalex": True, "semantic_scholar": True}
+
+    for label, provider in (("Semantic Scholar", "semantic_scholar"), ("OpenAlex", "openalex"), ("Crossref 逐筆書目辨識", "crossref")):
+        next(item for item in app.checkbox if item.label == label).set_value(False).run()
+        app.run()
+        next(button for button in app.button if button.label == "開始分析").click().run()
+        assert requests[-1][provider] is False
+    assert requests[-1] == {"crossref": False, "openalex": False, "semantic_scholar": False}
     assert not app.exception

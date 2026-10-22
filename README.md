@@ -164,7 +164,7 @@ PDF → Local extraction or optional GROBID ────────────
     ↓
 OpenAlex bibliometrics and local citation graph
     ↓
-Optional Semantic Scholar enrichment
+Semantic Scholar enrichment (enabled by default)
     ↓
 Capability-aware ranking
     ↓
@@ -175,15 +175,15 @@ Crossref 找不到原始論文時，若有上傳 PDF，仍會嘗試抽取參考�
 
 只有整段文字的參考文獻，會以候選標題、年份與第一作者核對，資料不足或多筆候選同樣符合時保留為未確認。標題搜尋與快取保留中文等非拉丁文字，更新後會重新建立搜尋快取，原有 DOI 資料仍可使用。
 
-完整分析若缺少原始論文 DOI，會用標題、作者與可用年份尋找唯一符合的 Semantic Scholar 正式發表紀錄，並提示尚未核對 PDF 版本。預印本、歧義或資訊衝突的紀錄不會直接套用，無法確認原始論文或缺少語意向量時也會說明哪些指標無法計算。
+啟用 Semantic Scholar 時，若缺少原始論文 DOI，會用標題、作者與可用年份尋找唯一符合的正式發表紀錄，並提示尚未核對 PDF 版本。預印本、歧義或資訊衝突的紀錄不會直接套用，無法確認原始論文或缺少語意向量時也會說明哪些指標無法計算。
 
-## 分析模式
+## 分析設定
 
-| 模式 | 內容 |
-|---|---|
-| 僅解析 | 取得 Crossref 參考文獻清單或解析 PDF，不查詢外部指標 |
-| 標準分析 | 加入 Crossref、OpenAlex、SJR 與局部引用網路 |
-| 完整分析 | 加入 Semantic Scholar 語意相似度與具影響力引用關係 |
+預設啟用 Crossref、OpenAlex 和 Semantic Scholar，直接按「開始分析」即可。若不需要某項服務，可在「進階設定」取消勾選；GROBID 仍為選用功能，SJR 則在已安裝本機資料時自動比對。
+
+Crossref 選項只控制參考文獻的逐筆書目辨識，輸入 DOI 或標題時仍會用 Crossref 查找原始論文。取消 OpenAlex 或 Semantic Scholar 後，對應的指標不會查詢或計分。
+
+Scite 尚未接入，目前建議保留為未來選用的引用脈絡資訊，不納入閱讀分數；用途、公開 API 與授權限制整理在 [Scite 整合評估](docs/scite-integration-assessment.md)。
 
 即使個別資料服務查詢失敗，已取得的結果仍會保留。系統會排除缺少資料的計分維度，並顯示警告。
 

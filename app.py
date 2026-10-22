@@ -44,16 +44,6 @@ st.set_page_config(
     layout="wide",
 )
 
-MODES = {
-    "parser": {"crossref": False, "openalex": False, "semantic_scholar": False},
-    "standard": {"crossref": True, "openalex": True, "semantic_scholar": False},
-    "complete": {"crossref": True, "openalex": True, "semantic_scholar": True},
-}
-MODE_TEXT = {
-    "parser": (("僅解析", "Parse only"), ("只取得參考文獻，不查詢外部指標。", "Extract references without external metrics.")),
-    "standard": (("標準分析（推薦）", "Standard (recommended)"), ("加入 Crossref、OpenAlex、SJR 和清單內的引用關係。", "Use Crossref, OpenAlex, SJR, and the local citation graph.")),
-    "complete": (("完整分析", "Complete analysis"), ("再加入 Semantic Scholar 的語意相似度與具影響力引用關係。", "Also add Semantic Scholar similarity and influential citation relationships.")),
-}
 language_choice = st.session_state.get("language_selector", "繁體中文")
 language = "zh-TW" if language_choice == "繁體中文" else "en"
 
@@ -563,9 +553,6 @@ identifier = st.text_input(t("原始論文 DOI 或標題", "Source paper DOI or 
 uploaded = st.file_uploader(t("選擇 PDF（選填）", "Select PDF (optional)"), type=["pdf"])
 if uploaded:
     st.caption(f"{uploaded.name} · {uploaded.size / 1024 / 1024:.2f} MB")
-mode = st.radio(t("分析模式", "Analysis mode"), list(MODES), index=1, horizontal=True, format_func=lambda x: t(*MODE_TEXT[x][0]))
-st.caption(t(*MODE_TEXT[mode][1]))
-defaults = MODES[mode]
 grobid_status_note = None
 with st.expander(t("進階設定", "Advanced settings")):
     use_grobid = st.checkbox(t("使用 GROBID 解析 PDF", "Use GROBID to parse PDF"), value=False)
@@ -611,10 +598,10 @@ with st.expander(t("進階設定", "Advanced settings")):
         st.session_state.pop("grobid_check_done", None)
         st.session_state.pop("grobid_check_error", None)
         st.session_state.pop("grobid_recheck_requested", None)
-    crossref = st.checkbox(t("Crossref 逐筆書目辨識", "Crossref per-reference lookup"), value=defaults["crossref"])
+    crossref = st.checkbox(t("Crossref 逐筆書目辨識", "Crossref per-reference lookup"), value=True)
     st.caption(t("輸入 DOI 或標題時，Crossref 都會查找論文及出版者提交的參考文獻，而這個選項只決定是否繼續逐筆查詢。", "The DOI/title entry always uses Crossref for the source paper and publisher-deposited list; this option controls subsequent per-reference lookup only."))
-    openalex = st.checkbox("OpenAlex", value=defaults["openalex"])
-    semantic_scholar = st.checkbox("Semantic Scholar", value=defaults["semantic_scholar"])
+    openalex = st.checkbox("OpenAlex", value=True)
+    semantic_scholar = st.checkbox("Semantic Scholar", value=True)
     force_refresh = st.checkbox(t("重新查詢外部 API（不使用快取）", "Re-query external APIs (skip cache)"))
     st.caption(t(
         "勾選後，這次分析會略過快取，向已啟用的 Crossref、OpenAlex 和 Semantic Scholar 重新查詢並更新快取，因此可能較慢，也會消耗 API 額度。",
